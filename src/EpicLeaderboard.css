@@ -1,0 +1,62 @@
+.epic-container {
+  --navy:#08214f; --blue:#1368df; --blue-2:#1f7cff; --soft-blue:#eaf6ff;
+  --cyan:#79d7ff; --gold:#f5b71b; --gold-2:#ffe7a3; --silver:#b9c9dd;
+  --bronze:#d79a5c; --green:#16a34a; --red:#ef3129; --muted:#6c7b92;
+  --line:#dceaf7; --card:rgba(255,255,255,.78);
+  font-family:"Be Vietnam Pro","Manrope",system-ui,-apple-system,"Segoe UI",Arial,sans-serif;
+  color:var(--navy);
+}
+.epic-container * { box-sizing: border-box; }
+.epic-poster {
+  width: 1200px; min-height: 1400px; position: relative; overflow: hidden;
+  padding: 54px 54px 100px;
+  background:
+    radial-gradient(circle at 75% 23%, rgba(95,196,255,.27), transparent 31%),
+    radial-gradient(circle at 49% 50%, rgba(255,204,70,.16), transparent 25%),
+    linear-gradient(135deg,#fff 0%,#f8fcff 45%,#eaf6ff 100%);
+  box-shadow: 0 28px 80px rgba(8,33,79,.16);
+}
+.epic-poster:before {content:"";position:absolute;inset:0;background-image:linear-gradient(rgba(19,104,223,.045) 1px, transparent 1px),linear-gradient(90deg, rgba(19,104,223,.045) 1px, transparent 1px);background-size:42px 42px;mask-image:radial-gradient(circle at 80% 28%, black, transparent 56%);pointer-events:none}
+.epic-poster:after {content:"";position:absolute;right:-120px;top:165px;width:720px;height:360px;background:repeating-linear-gradient(90deg,rgba(19,104,223,.12) 0 9px,transparent 9px 34px);clip-path:polygon(0 83%,10% 70%,20% 76%,31% 54%,43% 62%,56% 36%,69% 46%,80% 22%,100% 8%,100% 100%,0 100%);opacity:.22;filter:blur(.1px)}
+.epic-bg-line {position:absolute;left:-80px;top:330px;width:1380px;height:310px;opacity:.32;pointer-events:none}
+.epic-bg-line svg {width:100%;height:100%}
+.epic-header {position:relative;z-index:2;display:flex;align-items:flex-start;justify-content:space-between;gap:36px}
+.epic-eyeblock {display:flex;flex-direction:column;gap:12px}
+.epic-h1 {margin:0;font-size:55px;line-height:1.05;letter-spacing:-2.2px;font-weight:900;color:#08214f;text-transform:uppercase}
+.epic-h1 span {color:var(--blue);text-shadow:0 10px 24px rgba(19,104,223,.14)}
+.epic-subtitle {font-size:23px;font-weight:500;letter-spacing:.1px;color:#42536d}
+.epic-logo {width:310px;height:auto;object-fit:contain;margin-top:22px;filter:drop-shadow(0 8px 14px rgba(8,33,79,.12))}
+.epic-date {margin-top:12px;display:inline-flex;align-items:center;gap:13px;width:max-content;padding:13px 19px;border:1px solid #b9d8fb;background:rgba(255,255,255,.72);border-radius:13px;color:var(--blue);font-size:26px;font-weight:800;box-shadow:0 10px 28px rgba(19,104,223,.08)}
+.epic-date svg {width:25px;height:25px}
+.epic-podium {position:relative;z-index:3;margin-top:70px;display:grid;grid-template-columns:1fr 1.18fr 1fr;gap:27px;align-items:end}
+.epic-card {position:relative;border-radius:28px;background:linear-gradient(180deg,rgba(255,255,255,.92),rgba(255,255,255,.72));border:1.5px solid rgba(162,191,222,.72);box-shadow:0 22px 44px rgba(8,33,79,.10), inset 0 1px 0 rgba(255,255,255,.9);padding:84px 34px 34px;text-align:center;min-height:318px;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.epic-card:after {content:"";position:absolute;left:22px;right:22px;bottom:-15px;height:30px;border-radius:50%;background:rgba(19,104,223,.12);filter:blur(10px)}
+.epic-card.epic-rank1 {min-height:400px;padding-top:118px;border-color:rgba(245,183,27,.82);box-shadow:0 24px 48px rgba(245,183,27,.23),0 12px 34px rgba(8,33,79,.12), inset 0 1px 0 #fff;background:linear-gradient(180deg,#fffdf7 0%,#fff 58%,#fff9e9 100%)}
+.epic-card.epic-rank2 {min-height:350px;padding-top:100px;}
+.epic-card.epic-rank3 {border-color:rgba(215,154,92,.62);background:linear-gradient(180deg,#fffaf6,#fff 65%,#fff6ee)}
+.epic-medal {position:absolute;top:-47px;left:50%;transform:translateX(-50%);width:100px;height:100px;border-radius:30px;display:grid;place-items:center;font-size:44px;font-weight:900;line-height:1;z-index:2;box-shadow:0 12px 24px rgba(8,33,79,.15)}
+.epic-medal.epic-silver {color:#536781;background:linear-gradient(145deg,#f7fbff,#cbd9e8);border:3px solid #dfe8f3;text-shadow:0 2px #fff}
+.epic-medal.epic-gold {top:-68px;width:134px;height:134px;border-radius:42px;color:#9b5c00;background:linear-gradient(145deg,#fff7cf,#f5b71b 58%,#fff0b2);border:4px solid #ffdf7b;text-shadow:0 2px rgba(255,255,255,.7)}
+.epic-medal.epic-bronze {color:#7a3f13;background:linear-gradient(145deg,#fff0df,#d79a5c 60%,#ffd8b0);border:3px solid #f0bd87;text-shadow:0 2px rgba(255,255,255,.55)}
+.epic-crown {position:absolute;top:-106px;left:50%;transform:translateX(-50%);font-size:38px;filter:drop-shadow(0 10px 14px rgba(245,183,27,.28))}
+.epic-laurel {position:absolute;top:-78px;left:50%;transform:translateX(-50%);width:190px;height:170px;border-radius:50%;border-left:12px solid rgba(245,183,27,.62);border-right:12px solid rgba(245,183,27,.62);opacity:.85}
+.epic-name {font-size:31px;font-weight:900;letter-spacing:-.9px;color:#09275a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%}
+.epic-card.epic-rank1 .epic-name {font-size:39px;letter-spacing:-1.2px}
+.epic-tag {margin-top:17px;display:inline-flex;align-items:center;gap:13px;padding:10px 20px;border-radius:999px;border:1px solid #cbd9ea;background:rgba(255,255,255,.65);font-size:17px;font-weight:800;letter-spacing:.8px;color:#1c355c}
+.epic-tag .epic-long {color:var(--green)} .epic-tag .epic-short {color:var(--red)}
+.epic-label {margin-top:30px;color:#67768e;font-size:20px;font-weight:600;letter-spacing:2.1px}
+.epic-value {margin-top:9px;font-size:44px;font-weight:900;letter-spacing:-1.3px;color:#09275a;line-height:1}
+.epic-value.negative {color:var(--red)}
+.epic-card.epic-rank1 .epic-value {font-size:52px;color:var(--green);text-shadow:0 9px 18px rgba(22,163,74,.15)}
+.epic-card.epic-rank1 .epic-value.negative {color:var(--red);text-shadow:0 9px 18px rgba(239,49,41,.15)}
+.epic-table {position:relative;z-index:3;margin-top:52px;background:rgba(255,255,255,.82);border:1px solid rgba(190,214,239,.88);border-radius:25px;box-shadow:0 22px 54px rgba(8,33,79,.11);overflow:hidden;backdrop-filter:blur(14px)}
+.epic-row {height:73px;display:grid;grid-template-columns:118px 1.15fr 150px 38px 1fr 108px;align-items:center;padding:0 30px;border-bottom:1px solid var(--line);font-size:20px}
+.epic-row:last-child {border-bottom:0}
+.epic-badge {justify-self:start;width:58px;height:48px;border-radius:13px;display:grid;place-items:center;background:#eef7ff;border:1px solid #c9e2ff;color:var(--blue);font-weight:900;font-size:24px}
+.epic-row .epic-strategy {font-size:24px;font-weight:900;letter-spacing:-.5px;color:#08214f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.epic-side {font-size:18px;font-weight:900;letter-spacing:.8px}
+.epic-side.epic-short {color:var(--red)} .epic-side.epic-long {color:var(--green)}
+.epic-dot {width:6px;height:6px;border-radius:50%;background:#7e8ea4;justify-self:center}
+.epic-instrument {font-size:18px;color:#52647d;font-weight:600}
+.epic-profit {justify-self:end;font-size:26px;font-weight:900;color:#08214f}
+.epic-profit.negative {color:var(--red)}
