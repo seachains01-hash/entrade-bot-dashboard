@@ -4,7 +4,14 @@ import './EpicLeaderboard.css';
 const formatCurrency = (value) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value);
 
 const EpicLeaderboard = forwardRef(({ leaderboard, dateStr, timeframe }, ref) => {
-  const timeframeText = timeframe === 'day' ? 'Hôm Nay' : timeframe === 'week' ? 'Tuần Này' : timeframe === 'month' ? 'Tháng Này' : 'Năm Nay';
+  const timeframeText = {
+    'ALL': 'Toàn Thời Gian',
+    'DAY': 'Hôm Nay',
+    'WEEK': 'Tuần Này',
+    'MONTH': 'Tháng Này',
+    'QUARTER': 'Quý Này',
+    'YEAR': 'Năm Nay'
+  }[timeframe] || 'Hôm Nay';
   
   const top1 = leaderboard[0];
   const top2 = leaderboard[1];
@@ -12,9 +19,8 @@ const EpicLeaderboard = forwardRef(({ leaderboard, dateStr, timeframe }, ref) =>
   const rest = leaderboard.slice(3, 10);
 
   return (
-    <div style={{ position: 'fixed', top: 0, left: 0, opacity: 0, pointerEvents: 'none', zIndex: -1000 }}>
-      <div ref={ref} className="epic-container" style={{ width: '1200px' }}>
-        <main className="epic-poster">
+      <div ref={ref} className="epic-container" style={{ minWidth: '1200px', width: '1200px' }}>
+        <main className="epic-poster" style={{ minWidth: '1200px', width: '1200px' }}>
           <div className="epic-bg-line">
             <svg viewBox="0 0 1200 260" fill="none">
               <path d="M0 180 C120 90 210 210 330 122 C480 12 592 188 728 92 C850 6 972 78 1200 24" stroke="#56C6F6" strokeWidth="4"/>
@@ -38,70 +44,70 @@ const EpicLeaderboard = forwardRef(({ leaderboard, dateStr, timeframe }, ref) =>
           </section>
           
           <section className="epic-podium">
-            {/* Rank 2 */}
-            {top2 && (
-              <article className="epic-card epic-rank2">
-                <div className="epic-medal epic-silver">2</div>
-                <div className="epic-name">{top2.strategyName}</div>
-                <div className="epic-tag">
-                  <span className={`epic-${top2.botType?.toLowerCase()}`}>{top2.botType}</span>
-                  <span>|</span>
-                  <span>{top2.symbol}</span>
-                </div>
-                <div className="epic-label">LỢI NHUẬN</div>
-                <div className={`epic-value ${top2.todayProfit < 0 ? 'negative' : ''}`}>
-                  {top2.todayProfit > 0 ? '+' : ''}{formatCurrency(top2.todayProfit)}
-                </div>
-              </article>
-            )}
+              {/* Rank 2 */}
+              {top2 && (
+                <article className="epic-card epic-rank2">
+                  <div className="epic-medal epic-silver">2</div>
+                  <div className="epic-name">{top2.alias || top2.strategyName}</div>
+                  <div className="epic-tag">
+                    <span className={`epic-${top2.botType?.toLowerCase()}`}>{top2.botType}</span>
+                    <span>|</span>
+                    <span>{top2.symbol || 'VN30F1M'}</span>
+                  </div>
+                  <div className="epic-label">LỢI NHUẬN</div>
+                  <div className={`epic-value ${(top2.timeframeProfit || 0) < 0 ? 'negative' : ''}`}>
+                    {(top2.timeframeProfit || 0) > 0 ? '+' : ''}{formatCurrency(top2.timeframeProfit || 0)}
+                  </div>
+                </article>
+              )}
 
-            {/* Rank 1 */}
-            {top1 && (
-              <article className="epic-card epic-rank1">
-                <div className="epic-crown">♛</div><div className="epic-laurel"></div>
-                <div className="epic-medal epic-gold">1</div>
-                <div className="epic-name">{top1.strategyName}</div>
-                <div className="epic-tag">
-                  <span className={`epic-${top1.botType?.toLowerCase()}`}>{top1.botType}</span>
-                  <span>|</span>
-                  <span>{top1.symbol}</span>
-                </div>
-                <div className="epic-label">LỢI NHUẬN</div>
-                <div className={`epic-value ${top1.todayProfit < 0 ? 'negative' : ''}`}>
-                  {top1.todayProfit > 0 ? '+' : ''}{formatCurrency(top1.todayProfit)}
-                </div>
-              </article>
-            )}
+              {/* Rank 1 */}
+              {top1 && (
+                <article className="epic-card epic-rank1">
+                  <div className="epic-crown">♛</div><div className="epic-laurel"></div>
+                  <div className="epic-medal epic-gold">1</div>
+                  <div className="epic-name">{top1.alias || top1.strategyName}</div>
+                  <div className="epic-tag">
+                    <span className={`epic-${top1.botType?.toLowerCase()}`}>{top1.botType}</span>
+                    <span>|</span>
+                    <span>{top1.symbol || 'VN30F1M'}</span>
+                  </div>
+                  <div className="epic-label">LỢI NHUẬN</div>
+                  <div className={`epic-value ${(top1.timeframeProfit || 0) < 0 ? 'negative' : ''}`}>
+                    {(top1.timeframeProfit || 0) > 0 ? '+' : ''}{formatCurrency(top1.timeframeProfit || 0)}
+                  </div>
+                </article>
+              )}
 
-            {/* Rank 3 */}
-            {top3 && (
-              <article className="epic-card epic-rank3">
-                <div className="epic-medal epic-bronze">3</div>
-                <div className="epic-name">{top3.strategyName}</div>
-                <div className="epic-tag">
-                  <span className={`epic-${top3.botType?.toLowerCase()}`}>{top3.botType}</span>
-                  <span>|</span>
-                  <span>{top3.symbol}</span>
-                </div>
-                <div className="epic-label">LỢI NHUẬN</div>
-                <div className={`epic-value ${top3.todayProfit < 0 ? 'negative' : ''}`}>
-                  {top3.todayProfit > 0 ? '+' : ''}{formatCurrency(top3.todayProfit)}
-                </div>
-              </article>
-            )}
-          </section>
+              {/* Rank 3 */}
+              {top3 && (
+                <article className="epic-card epic-rank3">
+                  <div className="epic-medal epic-bronze">3</div>
+                  <div className="epic-name">{top3.alias || top3.strategyName}</div>
+                  <div className="epic-tag">
+                    <span className={`epic-${top3.botType?.toLowerCase()}`}>{top3.botType}</span>
+                    <span>|</span>
+                    <span>{top3.symbol || 'VN30F1M'}</span>
+                  </div>
+                  <div className="epic-label">LỢI NHUẬN</div>
+                  <div className={`epic-value ${(top3.timeframeProfit || 0) < 0 ? 'negative' : ''}`}>
+                    {(top3.timeframeProfit || 0) > 0 ? '+' : ''}{formatCurrency(top3.timeframeProfit || 0)}
+                  </div>
+                </article>
+              )}
+            </section>
           
           {rest.length > 0 && (
             <section className="epic-table">
               {rest.map((bot, idx) => (
                 <div className="epic-row" key={bot.id || idx}>
                   <div className="epic-badge">#{idx + 4}</div>
-                  <div className="epic-strategy">{bot.strategyName}</div>
+                  <div className="epic-strategy">{bot.alias || bot.strategyName}</div>
                   <div className={`epic-side epic-${bot.botType?.toLowerCase()}`}>{bot.botType}</div>
                   <div className="epic-dot"></div>
-                  <div className="epic-instrument">{bot.symbol}</div>
-                  <div className={`epic-profit ${bot.todayProfit < 0 ? 'negative' : ''}`}>
-                    {bot.todayProfit > 0 ? '+' : ''}{formatCurrency(bot.todayProfit)}
+                  <div className="epic-instrument">{bot.symbol || 'VN30F1M'}</div>
+                  <div className={`epic-profit ${(bot.timeframeProfit || 0) < 0 ? 'negative' : ''}`}>
+                    {(bot.timeframeProfit || 0) > 0 ? '+' : ''}{formatCurrency(bot.timeframeProfit || 0)}
                   </div>
                 </div>
               ))}
@@ -109,7 +115,6 @@ const EpicLeaderboard = forwardRef(({ leaderboard, dateStr, timeframe }, ref) =>
           )}
         </main>
       </div>
-    </div>
   );
 });
 

@@ -1,648 +1,880 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { Activity, TrendingUp, TrendingDown, Settings, LogOut, Award, Clock, Download, Image as ImageIcon, Crown } from 'lucide-react';
+import { Activity, TrendingUp, TrendingDown, Settings, LogOut, Award, Clock, Download, Image as ImageIcon, Crown, Radio, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import EpicLeaderboard from './EpicLeaderboard';
+import { generateMockBots } from './mockDataGenerator';
 import './index.css';
 
-const API_BASE_URL = '/api/bot-api/bots?_end=1000&_start=0&status=RUNNING,PENDING_STOP';
-const REFRESH_INTERVAL_MS = 5000; // Auto update every 5 seconds
-
-const getInvestorIdFromToken = (t) => {
-  if (!t) return '1000066393';
-  try {
-    const payload = JSON.parse(atob(t.split('.')[1]));
-    return payload.investorId || payload.accountNo || payload.userId || payload.sub || '1000066393';
-  } catch (e) {
-    return '1000066393';
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
   }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: '20px', color: 'red', textAlign: 'center' }}>
+          <h2>Đã xảy ra lỗi hệ thống</h2>
+          <pre>{this.state.error?.toString()}</pre>
+          <button onClick={() => window.location.reload()}>Tải lại trang</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// Hàm format tiền tệ
+const formatCurrency = (value) => {
+  return new Intl.NumberFormat('vi-VN', {
+    style: 'currency',
+    currency: 'VND',
+    maximumFractionDigits: 0
+  }).format(value);
 };
 
-function App() {
+// Map Alias cho Tên Chiến thuật
+const getAliasName = (name) => {
+  if (!name) return 'Unknown';
+  if (name.includes('CNPS4')) return 'CNPS4 - BB/SMA HTF';
+  if (name.includes('CNPS5')) return 'CNPS5 - SMA/ADX';
+  if (name.includes('CNPS6')) return 'CNPS6 - BB/ADX';
+  if (name.includes('CNPS7')) return 'CNPS7 - 3SMA Cross';
+  return name;
+};
+
+// Filter deals by timeframe
+const filterDealsByTimeframe = (deals, tf) => {
+  if (tf === 'ALL' || !deals) return deals || [];
+  const now = new Date();
+  let startTime = 0;
+  
+  if (tf === 'DAY') {
+    startTime = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  } else if (tf === 'WEEK') {
+    const day = now.getDay() || 7; 
+    startTime = new Date(now.getFullYear(), now.getMonth(), now.getDate() - day + 1).getTime();
+  } else if (tf === 'MONTH') {
+    startTime = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  } else if (tf === 'QUARTER') {
+    const qMonth = Math.floor(now.getMonth() / 3) * 3;
+    startTime = new Date(now.getFullYear(), qMonth, 1).getTime();
+  } else if (tf === 'YEAR') {
+    startTime = new Date(now.getFullYear(), 0, 1).getTime();
+  }
+  
+  return deals.filter(d => new Date(d.closeTime).getTime() >= startTime);
+};
+
+// Hàm xử lý dữ liệu bot chi tiết
+const processBotData = (bot, tf) => {
+  const allDeals = bot.results?.deals || [];
+  const deals = filterDealsByTimeframe(allDeals, tf);
+  
+  // Tính Winrate
+  const winDeals = deals.filter(d => d.netProfit > 0).length;
+  const winrate = deals.length > 0 ? ((winDeals / deals.length) * 100).toFixed(1) : 0;
+  
+  // Tìm lệnh gần nhất (sắp xếp mới nhất)
+  const sortedDealsDesc = [...deals].sort((a,b) => new Date(b.closeTime) - new Date(a.closeTime));
+  const lastDeal = sortedDealsDesc[0];
+  let lastSignalTime = lastDeal ? (lastDeal.closeTime || lastDeal.openTime) : null;
+  
+  let formattedLastTime = '-';
+  if (lastSignalTime) {
+    try {
+      const d = new Date(lastSignalTime);
+      formattedLastTime = d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+    } catch(e) {}
+  }
+
+  // Calculate timeframe-specific profit & return
+  let profit = 0;
+  let returnPct = 0;
+  if (tf === 'ALL') {
+    profit = bot.results?.profit || 0;
+    returnPct = bot.results?.return || 0;
+  } else {
+    profit = deals.reduce((sum, d) => sum + (d.netProfit || 0), 0);
+    returnPct = (profit / 30000000) * 100;
+  }
+
+  // Drawdown in timeframe
+  let maxDrawdown = 0;
+  if (deals.length > 0) {
+     let peak = 30000000;
+     let current = 30000000;
+     const sortedDealsAsc = [...deals].sort((a,b) => new Date(a.closeTime) - new Date(b.closeTime));
+     sortedDealsAsc.forEach(d => {
+       current += d.netProfit || 0;
+       if (current > peak) peak = current;
+       const dd = ((peak - current) / peak) * 100;
+       if (dd > maxDrawdown) maxDrawdown = dd;
+     });
+  } else {
+    maxDrawdown = bot.results?.drawdown || (profit < 0 ? Math.abs(returnPct) : 0);
+  }
+
+  return {
+    ...bot,
+    alias: getAliasName(bot.strategyName),
+    uniqueAlias: `${getAliasName(bot.strategyName)} (${bot.botType || 'NEUTRAL'})`,
+    winrate,
+    tradesCount: deals.length,
+    lastSignalTime: formattedLastTime,
+    rawLastTime: lastSignalTime,
+    drawdown: maxDrawdown ? maxDrawdown.toFixed(2) + '%' : '0%',
+    entryPrice: bot.entryPrice || '-',
+    displayStatus: bot.status === 'RUNNING' ? 'Running' : (bot.status || 'Paused'),
+    timeframeProfit: profit,
+    timeframeReturn: returnPct
+  };
+};
+
+const AppContent = () => {
   const [token, setToken] = useState(localStorage.getItem('entrade_token') || '');
   const [isSetup, setIsSetup] = useState(!!localStorage.getItem('entrade_token'));
   const [bots, setBots] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [lastUpdated, setLastUpdated] = useState(null);
-  
-  const [selectedStrategy, setSelectedStrategy] = useState('');
-  const [leaderboardTimeframe, setLeaderboardTimeframe] = useState('day'); // day, week, month, year
   
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [loginLoading, setLoginLoading] = useState(false);
-  const intervalRef = useRef(null);
+  const [loginMethod, setLoginMethod] = useState('token'); // 'token' or 'account'
+  const [inputToken, setInputToken] = useState('');
+  
+  const [chartMode, setChartMode] = useState('total'); // 'total' or 'compare'
+  const [hiddenBots, setHiddenBots] = useState([]);
+  
+  const [timeframe, setTimeframe] = useState('ALL'); // 'DAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR', 'ALL'
+  const [isMockMode, setIsMockMode] = useState(false);
+  
   const epicLeaderboardRef = useRef(null);
+  const previewWrapperRef = useRef(null);
+  const previewContentRef = useRef(null);
+  const [previewStyle, setPreviewStyle] = useState({ scale: 1, height: 'auto' });
+  
+  const COLORS = ['#3b82f6', '#10b981', '#ef4444', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
 
-  const fetchData = async (isBackground = false) => {
-    if (!isBackground) setLoading(true);
-    setError('');
-    try {
-      const invId = getInvestorIdFromToken(token);
-      const url = `${API_BASE_URL}&investorId=${invId}`;
+  // --- HOOKS ---
+  
+  // Xử lý dữ liệu Bots
+  const processedBots = useMemo(() => bots.map(b => processBotData(b, timeframe)), [bots, timeframe]);
+
+  // Tính toán KPIs
+  const kpis = useMemo(() => {
+    let totalNav = 0;
+    let totalProfit = 0;
+    let longCount = 0;
+    let shortCount = 0;
+    let runningCount = 0;
+
+    processedBots.forEach(bot => {
+      totalProfit += bot.timeframeProfit || 0;
+      if (bot.botType === 'LONG') longCount++;
+      if (bot.botType === 'SHORT') shortCount++;
+      if (bot.displayStatus === 'Running') runningCount++;
       
-      const response = await fetch(url, {
-        headers: {
-          'Authorization': token.startsWith('Bearer') ? token : `Bearer ${token}`
+      totalNav += 30000000 + (bot.timeframeProfit || 0); 
+    });
+
+    const returnPct = (totalProfit / (processedBots.length * 30000000 || 1)) * 100;
+
+    return {
+      totalNav,
+      totalProfit,
+      returnPct: returnPct.toFixed(2),
+      longCount,
+      shortCount,
+      neutralCount: processedBots.length - longCount - shortCount,
+      runningCount,
+      totalCount: processedBots.length
+    };
+  }, [processedBots]);
+
+  // Xử lý Chart Data (Tổng hợp NAV & Từng Bot)
+  const chartData = useMemo(() => {
+    if (processedBots.length === 0) return [];
+    
+    // Thu thập tất cả các deals và sắp xếp theo thời gian
+    const allDeals = [];
+    processedBots.forEach(bot => {
+      const history = bot.results?.deals || [];
+      const filteredHistory = filterDealsByTimeframe(history, timeframe);
+      
+      filteredHistory.forEach(deal => {
+        if (deal.closeTime) {
+          try {
+            allDeals.push({
+              ...deal,
+              uniqueAlias: bot.uniqueAlias,
+              closeTimeRaw: new Date(deal.closeTime)
+            });
+          } catch(e) {}
         }
       });
-      
-      if (!response.ok) {
-        const errText = await response.text().catch(() => '');
-        if (response.status === 401) {
-          throw new Error('Token hết hạn hoặc không hợp lệ. Vui lòng đăng xuất và đăng nhập lại.');
-        }
-        throw new Error(`Lỗi ${response.status} từ máy chủ: ${errText.substring(0, 100)}`);
+    });
+    
+    allDeals.sort((a, b) => a.closeTimeRaw - b.closeTimeRaw);
+
+    let currentTotalNav = 30000000 * processedBots.length;
+    const currentPnL = {};
+    processedBots.forEach(bot => currentPnL[bot.uniqueAlias] = 0);
+
+    const chartPoints = [];
+    
+    // Khởi tạo điểm đầu tiên
+    chartPoints.push({
+      time: 'Start',
+      totalNav: currentTotalNav,
+      ...currentPnL
+    });
+
+    allDeals.forEach(deal => {
+      let timeStr = deal.closeTimeRaw.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+      if (timeframe !== 'DAY') {
+        timeStr = deal.closeTimeRaw.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' }) + ' ' + timeStr;
       }
       
-      const json = await response.json();
-      const loadedBots = json.data || [];
-      setBots(loadedBots);
+      currentPnL[deal.uniqueAlias] += (deal.netProfit || 0);
+      currentTotalNav += (deal.netProfit || 0);
       
-      setLastUpdated(new Date());
+      chartPoints.push({
+        time: timeStr,
+        totalNav: currentTotalNav,
+        ...currentPnL
+      });
+    });
+
+    return chartPoints;
+  }, [processedBots, timeframe]);
+
+  // Xử lý Live Signals
+  const liveSignals = useMemo(() => {
+    const signals = [];
+    processedBots.forEach(bot => {
+      if (bot.botType === 'LONG' || bot.botType === 'SHORT') {
+        signals.push({
+          botId: bot.id,
+          strategy: bot.alias,
+          type: bot.botType,
+          time: bot.rawLastTime || new Date().toISOString(),
+          displayTime: bot.lastSignalTime
+        });
+      }
+    });
+    // Sắp xếp mới nhất lên đầu
+    return signals.sort((a, b) => new Date(b.time) - new Date(a.time));
+  }, [processedBots]);
+
+  // Xử lý Leaderboard
+  const leaderboard = useMemo(() => {
+    return [...processedBots].sort((a, b) => {
+      const profitA = a.timeframeProfit || 0;
+      const profitB = b.timeframeProfit || 0;
+      if (profitB !== profitA) return profitB - profitA; // Sort by Profit
+      
+      // Tie-breaker 1: Return
+      const retA = a.timeframeReturn || 0;
+      const retB = b.timeframeReturn || 0;
+      if (retB !== retA) return retB - retA;
+
+      // Tie-breaker 2: Trades Count
+      return b.tradesCount - a.tradesCount;
+    });
+  }, [processedBots]);
+
+  // Kểm tra xem tất cả bot có bằng 0 hết không
+  const isLeaderboardEmpty = useMemo(() => {
+    return leaderboard.length === 0 || leaderboard.every(b => (b.timeframeProfit || 0) === 0);
+  }, [leaderboard]);
+
+  const dateStr = useMemo(() => {
+    return new Date().toLocaleDateString('vi-VN');
+  }, []);
+
+  // Responsive logic for Leaderboard Preview
+  useEffect(() => {
+    if (!previewWrapperRef.current || !previewContentRef.current) return;
+    
+    const observer = new ResizeObserver(() => {
+      if (!previewWrapperRef.current || !previewContentRef.current) return;
+      const wrapperWidth = previewWrapperRef.current.clientWidth;
+      const contentHeight = previewContentRef.current.offsetHeight;
+      
+      if (wrapperWidth < 1200 && wrapperWidth > 0) {
+        const scale = wrapperWidth / 1200;
+        setPreviewStyle({
+          scale: scale,
+          height: `${contentHeight * scale}px`
+        });
+      } else {
+        setPreviewStyle({
+          scale: 1,
+          height: 'auto'
+        });
+      }
+    });
+    
+    observer.observe(previewWrapperRef.current);
+    observer.observe(previewContentRef.current);
+    
+    return () => observer.disconnect();
+  }, [leaderboard, timeframe]);
+
+  // Decode JWT safely
+  const getInvestorIdFromToken = (t) => {
+    try {
+      const payload = t.split('.')[1];
+      const decoded = JSON.parse(atob(payload));
+      return decoded.investorId;
+    } catch(e) {
+      return null;
+    }
+  };
+
+  // --- API CALLS ---
+  const fetchData = async () => {
+    if (!token) return;
+    if (isMockMode) return; // Không gọi API hay tạo lại data nếu đang ở chế độ Mock
+    
+    setLoading(true);
+    
+    try {
+      const investorId = getInvestorIdFromToken(token);
+      let url = '/api/bot-api/bots?_end=1000&_start=0&status=RUNNING,PENDING_STOP';
+      if (investorId) {
+        url += `&investorId=${investorId}`;
+      }
+
+      const res = await fetch(url, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`API Lỗi ${res.status}: ${text.substring(0, 50)}`);
+      }
+      
+      const resData = await res.json();
+      const botsData = Array.isArray(resData) ? resData : (resData.data || []);
+      
+      if (botsData) {
+        setBots(botsData);
+        setError('');
+      } else {
+        throw new Error('Dữ liệu API không đúng định dạng');
+      }
     } catch (err) {
-      if (!isBackground) setError(err.message);
+      console.error(err);
+      setError(err.message);
+      if (err.message.includes('Lỗi 401')) {
+        handleLogout();
+      }
     } finally {
-      if (!isBackground) setLoading(false);
+      setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (isSetup && token) {
-      fetchData(); // Initial fetch
+    if (isSetup || isMockMode) {
+      fetchData();
+      const interval = setInterval(fetchData, 5000);
+      return () => clearInterval(interval);
+    }
+  }, [isSetup, token, isMockMode]);
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    
+    if (loginMethod === 'token') {
+      if (!inputToken.trim()) {
+        setError('Vui lòng nhập Token');
+        return;
+      }
       
-      // Real-time polling
-      intervalRef.current = setInterval(() => {
-        fetchData(true);
-      }, REFRESH_INTERVAL_MS);
+      // Tự động xóa chữ "Bearer " nếu user copy dính vào
+      let finalToken = inputToken.trim();
+      if (finalToken.startsWith('Bearer ')) {
+        finalToken = finalToken.replace('Bearer ', '');
+      }
+      
+      localStorage.setItem('entrade_token', finalToken);
+      setToken(finalToken);
+      setIsSetup(true);
+      return;
     }
 
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSetup, token]);
-
-  // Đặt chiến lược mặc định khi danh sách bot đã tải mà chưa có strategy nào được chọn
-  useEffect(() => {
-    if (bots.length > 0 && !selectedStrategy) {
-      setSelectedStrategy(bots[0].strategyName);
-    }
-  }, [bots, selectedStrategy]);
-
-  const handleLogin = async () => {
-    if (!username || !password) {
+    if (!username.trim() || !password.trim()) {
       setError('Vui lòng nhập tài khoản và mật khẩu');
       return;
     }
-    setLoginLoading(true);
+    setLoading(true);
     setError('');
     try {
       const res = await fetch('/api/entrade-api/v2/auth', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password })
       });
-      
       const data = await res.json();
       
-      if (!res.ok) {
-        throw new Error(data.message || data.error || 'Đăng nhập thất bại. Kiểm tra lại thông tin.');
+      const authToken = data.token || data.accessToken || data.data?.token || data.entrade_token;
+      
+      // Nếu API trả về yêu cầu OTP, cảnh báo luôn
+      if (res.ok && data.requireOtp) {
+         throw new Error('Hệ thống yêu cầu nhập mã OTP. Vui lòng sử dụng tính năng Đăng nhập bằng Token!');
       }
-      
-      // In ra console để debug
-      console.log('Phản hồi từ Entrade:', data);
-      
-      // Token usually in data.token, data.data.token, or access_token
-      const tokenToSave = data.token || data.data?.token || data.access_token;
-      if (!tokenToSave || typeof tokenToSave !== 'string') {
-        throw new Error('Không lấy được Token hợp lệ. Dữ liệu: ' + JSON.stringify(data).substring(0, 150));
+
+      if (res.ok && authToken) {
+        localStorage.setItem('entrade_token', authToken);
+        setToken(authToken);
+        setIsSetup(true);
+      } else {
+        throw new Error(data.message || data.error || 'Sai tên đăng nhập hoặc mật khẩu');
       }
-      
-      localStorage.setItem('entrade_token', tokenToSave);
-      setToken(tokenToSave);
-      setIsSetup(true);
     } catch (err) {
-      setError(err.message);
+      setError(err.message || 'Lỗi kết nối đến server');
     } finally {
-      setLoginLoading(false);
+      setLoading(false);
     }
+  };
+
+  const toggleBotVisibility = (alias) => {
+    setHiddenBots(prev => 
+      prev.includes(alias) ? prev.filter(a => a !== alias) : [...prev, alias]
+    );
   };
 
   const handleLogout = () => {
     localStorage.removeItem('entrade_token');
     setToken('');
-    setUsername('');
-    setPassword('');
     setIsSetup(false);
     setBots([]);
-    if (intervalRef.current) clearInterval(intervalRef.current);
   };
 
   const exportLeaderboard = async () => {
-    if (!epicLeaderboardRef.current) return;
-    try {
-      // Manual cloning to bypass any viewport clipping or hidden wrapper bugs
-      const originalNode = epicLeaderboardRef.current;
-      const clone = originalNode.cloneNode(true);
-      
-      // Force exact dimensions and visibility on the clone
-      clone.style.position = 'absolute';
-      clone.style.top = '0px';
-      clone.style.left = '0px';
-      clone.style.width = '1200px';
-      clone.style.zIndex = '-9999';
-      clone.style.opacity = '1';
-      clone.style.pointerEvents = 'none';
-      
-      // Temporarily expand body to prevent scrollbar/clipping issues during capture
-      const oldOverflow = document.body.style.overflow;
-      document.body.style.overflow = 'visible';
-      
-      document.body.appendChild(clone);
+    if (!previewContentRef.current) return;
+    
+    const prevMinWidth = document.body.style.minWidth;
+    const prevOverflow = document.body.style.overflowX;
 
-      const canvas = await html2canvas(clone, {
+    try {
+      const target = previewContentRef.current;
+
+      document.body.style.minWidth = '1300px';
+      document.body.style.overflowX = 'visible';
+
+      const canvas = await html2canvas(target, {
         backgroundColor: '#ffffff',
-        scale: 2, // Tăng độ nét cho ảnh xuất ra
-        width: 1200,
-        windowWidth: 1200,
+        scale: 2,
         scrollX: 0,
-        scrollY: 0
+        scrollY: 0,
+        useCORS: true,
+        logging: false
       });
       
-      document.body.removeChild(clone);
-      document.body.style.overflow = oldOverflow;
-
       const link = document.createElement('a');
-      link.download = `BXH_Bot_Entrade_${new Date().toLocaleDateString('vi-VN').replace(/\//g, '-')}.png`;
-      link.href = canvas.toDataURL();
+      link.download = `BXH_Bot_Entrade_${dateStr.replace(/\//g, '-')}.png`;
+      link.href = canvas.toDataURL('image/png');
       link.click();
     } catch (err) {
       console.error('Lỗi khi xuất ảnh:', err);
+      alert('Có lỗi khi xuất ảnh, vui lòng thử lại.');
+    } finally {
+      document.body.style.minWidth = prevMinWidth;
+      document.body.style.overflowX = prevOverflow;
     }
   };
 
-  const formatCurrency = (value) => {
-    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value);
-  };
 
-  // Tính PnL của 1 bot dựa trên khoảng thời gian
-  const getProfitByTimeframe = (bot, timeframe) => {
-    if (!bot.results || !bot.results.deals) return 0;
-    
-    const now = new Date();
-    // Bắt đầu ngày hôm nay
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    
-    // Bắt đầu tuần này (Thứ 2)
-    const dayOfWeek = now.getDay() || 7;
-    const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek + 1);
-    
-    // Bắt đầu tháng này
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    
-    // Bắt đầu năm nay
-    const startOfYear = new Date(now.getFullYear(), 0, 1);
-    
-    let targetStartDate;
-    if (timeframe === 'day') targetStartDate = startOfToday;
-    else if (timeframe === 'week') targetStartDate = startOfWeek;
-    else if (timeframe === 'month') targetStartDate = startOfMonth;
-    else if (timeframe === 'year') targetStartDate = startOfYear;
-    
-    let profit = 0;
-    bot.results.deals.forEach(deal => {
-      // deal.closeTime là chuẩn ISO UTC
-      if (deal.closeTime && !deal.closeTime.startsWith("0001")) {
-        const dealDate = new Date(deal.closeTime);
-        if (dealDate >= targetStartDate) {
-          profit += (deal.netProfit || 0);
-        }
-      }
-    });
-    return profit;
-  };
-
+  // --- RENDER ---
   if (!isSetup) {
     return (
       <div className="setup-container">
-        <div className="card setup-card" style={{ padding: '40px 32px' }}>
-          <Settings size={48} color="var(--accent-color)" style={{ marginBottom: 16 }} />
-          <h2>Đăng nhập Entrade</h2>
-          <p style={{ color: 'var(--text-secondary)', marginTop: 8, marginBottom: 24 }}>
-            Vui lòng đăng nhập tài khoản DNSE / Entrade để bắt đầu theo dõi Bot.
-          </p>
-          <div style={{ textAlign: 'left', marginBottom: 16 }}>
-            <label style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)' }}>Tài khoản / Số điện thoại</label>
-            <input 
-              type="text" 
-              className="input-field" 
-              placeholder="Nhập tên đăng nhập"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              style={{ marginTop: 8, fontFamily: 'inherit' }}
-            />
+        <div className="card setup-card">
+          <Settings size={48} color="var(--accent-color)" style={{ margin: '0 auto 16px' }}/>
+          <h2 style={{ marginBottom: '8px' }}>Đăng Nhập Hệ Thống</h2>
+          <p style={{ color: 'var(--text-secondary)' }}>Nhập tài khoản Entrade để truy cập Dashboard</p>
+          
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', marginTop: '16px' }}>
+            <button 
+              type="button"
+              style={{ flex: 1, padding: '8px', borderRadius: '6px', border: loginMethod === 'token' ? '1px solid var(--accent-color)' : '1px solid var(--border-color)', background: loginMethod === 'token' ? 'rgba(59, 130, 246, 0.1)' : 'transparent', color: loginMethod === 'token' ? 'var(--accent-color)' : 'var(--text-secondary)', fontWeight: 600 }}
+              onClick={() => { setLoginMethod('token'); setError(''); }}
+            >
+              Dùng Token
+            </button>
+            <button 
+              type="button"
+              style={{ flex: 1, padding: '8px', borderRadius: '6px', border: loginMethod === 'account' ? '1px solid var(--accent-color)' : '1px solid var(--border-color)', background: loginMethod === 'account' ? 'rgba(59, 130, 246, 0.1)' : 'transparent', color: loginMethod === 'account' ? 'var(--accent-color)' : 'var(--text-secondary)', fontWeight: 600 }}
+              onClick={() => { setLoginMethod('account'); setError(''); }}
+            >
+              User / Pass
+            </button>
           </div>
-          <div style={{ textAlign: 'left', marginBottom: 24 }}>
-            <label style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)' }}>Mật khẩu</label>
-            <input 
-              type="password" 
-              className="input-field" 
-              placeholder="Nhập mật khẩu"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-              style={{ marginTop: 8, fontFamily: 'inherit' }}
-            />
-          </div>
-          {error && <p className="text-red" style={{ marginBottom: 16 }}>{error}</p>}
-          <button 
-            className="btn-primary" 
-            onClick={handleLogin} 
-            disabled={loginLoading}
-            style={{ width: '100%', padding: '12px', fontSize: 16, opacity: loginLoading ? 0.7 : 1 }}
-          >
-            {loginLoading ? 'Đang xử lý...' : 'Đăng nhập'}
-          </button>
+
+          <form onSubmit={handleLogin}>
+            {loginMethod === 'account' ? (
+              <>
+                <input 
+                  type="text" 
+                  className="input-field" 
+                  placeholder="Tên đăng nhập" 
+                  value={username} 
+                  onChange={e => setUsername(e.target.value)}
+                  style={{ marginBottom: '12px', marginTop: 0 }}
+                />
+                <input 
+                  type="password" 
+                  className="input-field" 
+                  placeholder="Mật khẩu" 
+                  value={password} 
+                  onChange={e => setPassword(e.target.value)}
+                  style={{ marginTop: '0', marginBottom: '16px' }}
+                />
+              </>
+            ) : (
+              <input 
+                type="text" 
+                className="input-field" 
+                placeholder="Nhập Entrade Token (Bearer...)" 
+                value={inputToken} 
+                onChange={e => setInputToken(e.target.value)}
+                style={{ marginTop: '0', marginBottom: '16px' }}
+              />
+            )}
+            
+            {error && <div style={{ color: 'var(--danger-color)', marginBottom: '16px', fontSize: '14px', fontWeight: 500 }}>{error}</div>}
+            
+            <button type="submit" className="btn-primary" style={{ width: '100%' }} disabled={loading}>
+              {loading ? 'Đang xác thực...' : 'Đăng Nhập'}
+            </button>
+          </form>
         </div>
       </div>
     );
   }
 
-  const totalPnL = bots.reduce((sum, bot) => sum + (bot.results?.profit || 0), 0);
-  const totalBots = bots.length;
-  const runningBots = bots.filter(b => b.status === 'RUNNING').length;
-
-  // Tính toán bảng xếp hạng theo thời gian
-  const leaderboard = [...bots].map(bot => ({
-    ...bot,
-    todayProfit: getProfitByTimeframe(bot, leaderboardTimeframe)
-  })).sort((a, b) => b.todayProfit - a.todayProfit);
-
-  // Lấy danh sách các chiến lược độc nhất để làm menu chọn
-  const uniqueStrategies = useMemo(() => {
-    const names = bots.map(b => b.strategyName);
-    return [...new Set(names)];
-  }, [bots]);
-
-  // Xử lý dữ liệu cho biểu đồ: gom các bot có cùng tên chiến lược (Long & Short)
-  const chartData = useMemo(() => {
-    if (!selectedStrategy) return [];
-    
-    const botsOfStrategy = bots.filter(b => b.strategyName === selectedStrategy);
-    const timeMap = {};
-    
-    // Sử dụng thuật toán Time Bucket (gom nhóm mỗi 10 phút) để chống nhảy biểu đồ
-    const BUCKET_SIZE_MS = 10 * 60 * 1000; 
-
-    botsOfStrategy.forEach(bot => {
-      if (!bot.results || !bot.results.assets) return;
-      
-      bot.results.assets.forEach(a => {
-        if (!a.time || a.time.startsWith('000') || a.time.startsWith('0001')) return; // Bỏ qua dữ liệu lỗi
-        
-        const d = new Date(a.time);
-        const ms = d.getTime();
-        // Làm tròn mốc thời gian về bucket 10 phút cố định
-        const bucketMs = Math.floor(ms / BUCKET_SIZE_MS) * BUCKET_SIZE_MS;
-        
-        if (!timeMap[bucketMs]) {
-          timeMap[bucketMs] = {
-            ms: bucketMs,
-            timeLabel: new Date(bucketMs).toLocaleString('vi-VN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-          };
-        }
-        // Ghi lại NAV cho botType tương ứng (LONG hoặc SHORT). Nếu có nhiều điểm trong 10 phút, nó sẽ lấy điểm cuối cùng.
-        timeMap[bucketMs][bot.botType] = a.nav;
-      });
-    });
-
-    // Chuyển object thành array và sắp xếp theo thời gian
-    // BỎ HẲN DECIMATION để biểu đồ không bao giờ bị nhảy. Time Bucket 10 phút đã đủ giới hạn dữ liệu ở mức mượt mà (~140 điểm/ngày)
-    return Object.values(timeMap).sort((a, b) => a.ms - b.ms);
-  }, [bots, selectedStrategy]);
-
-  // Các botType đang có trong chiến lược đang chọn để vẽ Line tương ứng
-  const availableBotTypes = useMemo(() => {
-    const types = new Set();
-    chartData.forEach(d => {
-      if (d.LONG !== undefined) types.add('LONG');
-      if (d.SHORT !== undefined) types.add('SHORT');
-    });
-    return Array.from(types);
-  }, [chartData]);
-
   return (
     <div className="container">
-      <div className="header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <Activity size={32} color="var(--accent-color)" />
-          <h1 className="title">Entrade Bot Dashboard</h1>
-        </div>
-        
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          {lastUpdated && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-secondary)', fontSize: 13 }}>
-              <Clock size={14} /> 
-              Cập nhật: {lastUpdated.toLocaleTimeString('vi-VN')}
+      {/* Header */}
+      <header className="header">
+        <div>
+          <h1 className="title" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <Activity color="var(--accent-color)" size={28}/> 
+            Trading Dashboard V2
+          </h1>
+          <div style={{ color: 'var(--text-secondary)', fontSize: '14px', marginTop: '8px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <Clock size={14} /> Dữ liệu trực tiếp ngày {dateStr}
+            </span>
+            <div style={{ width: '1px', height: '14px', background: 'var(--border-color)' }}></div>
+            <div style={{ display: 'flex', gap: '4px' }}>
+              {['ALL', 'DAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR'].map(tf => (
+                <button
+                  key={tf}
+                  onClick={() => setTimeframe(tf)}
+                  style={{
+                    fontSize: '11px',
+                    padding: '2px 8px',
+                    borderRadius: '12px',
+                    border: 'none',
+                    background: timeframe === tf ? 'var(--accent-color)' : 'var(--bg-color)',
+                    color: timeframe === tf ? '#fff' : 'var(--text-secondary)',
+                    fontWeight: timeframe === tf ? 600 : 400,
+                    cursor: 'pointer'
+                  }}
+                >
+                  {tf === 'ALL' ? 'Tất cả' : tf === 'DAY' ? 'Hôm nay' : tf === 'WEEK' ? 'Tuần' : tf === 'MONTH' ? 'Tháng' : tf === 'QUARTER' ? 'Quý' : 'Năm'}
+                </button>
+              ))}
             </div>
-          )}
-          <button onClick={handleLogout} style={{ background: 'var(--bg-color)', border: '1px solid var(--border-color)', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', borderRadius: 6 }}>
-            <LogOut size={16} /> Đăng xuất
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button onClick={() => {
+            if (!isMockMode) {
+              setBots(generateMockBots());
+              setIsMockMode(true);
+            } else {
+              setBots([]); // Xóa data giả, useEffect sẽ tự gọi API lại
+              setIsMockMode(false);
+            }
+          }} className="btn-primary" style={{ background: isMockMode ? 'var(--warning-color)' : 'transparent', color: isMockMode ? '#fff' : 'var(--warning-color)', border: `1px solid var(--warning-color)` }}>
+            {isMockMode ? 'Tắt Mock Data' : 'Tạo Dữ Liệu Test'}
           </button>
+          <button onClick={handleLogout} className="btn-primary" style={{ background: 'transparent', color: 'var(--text-secondary)', border: '1px solid var(--border-color)' }}>
+            <LogOut size={16} style={{ verticalAlign: 'middle', marginRight: '8px' }}/> Đăng xuất
+          </button>
+        </div>
+      </header>
+
+      {/* KPI Cards */}
+      <div className="kpi-grid">
+        <div className="card">
+          <div className="metric-title">Tổng NAV Hệ Thống</div>
+          <div className="metric-value">
+            {formatCurrency(kpis.totalNav)}
+          </div>
+        </div>
+        <div className="card">
+          <div className="metric-title">Tổng PnL Hôm Nay</div>
+          <div className={`metric-value ${kpis.totalProfit >= 0 ? 'text-green' : 'text-red'}`}>
+            {kpis.totalProfit >= 0 ? <TrendingUp size={24}/> : <TrendingDown size={24}/>}
+            {kpis.totalProfit >= 0 ? '+' : ''}{formatCurrency(kpis.totalProfit)}
+          </div>
+          <div className={`metric-sub ${kpis.returnPct >= 0 ? 'text-green' : 'text-red'}`} style={{ marginTop: '4px' }}>
+            {kpis.returnPct >= 0 ? '+' : ''}{kpis.returnPct}% Return
+          </div>
+        </div>
+        <div className="card">
+          <div className="metric-title">Trạng Thái Vận Hành</div>
+          <div className="metric-value text-green">
+            <CheckCircle size={24}/> {kpis.runningCount} / {kpis.totalCount} Bot
+          </div>
+          <div className="metric-sub text-green" style={{ marginTop: '4px' }}>Đang chạy (Running)</div>
+        </div>
+        <div className="card">
+          <div className="metric-title">Tín Hiệu Hiện Tại</div>
+          <div className="metric-value">
+            <Radio size={24} color="var(--accent-color)"/> {kpis.longCount + kpis.shortCount} Active
+          </div>
+          <div className="metric-sub" style={{ marginTop: '4px', color: 'var(--text-secondary)' }}>
+            <span style={{ color: 'var(--success-color)' }}>LONG: {kpis.longCount}</span> | <span style={{ color: 'var(--danger-color)' }}>SHORT: {kpis.shortCount}</span> | Neutral: {kpis.neutralCount}
+          </div>
         </div>
       </div>
 
-      {loading && !bots.length ? (
-        <p>Đang tải dữ liệu...</p>
-      ) : error && !bots.length ? (
-        <div className="card"><p className="text-red">{error}</p></div>
-      ) : (
-        <>
-          <div className="grid-3">
-            <div className="card">
-              <div className="metric-title">Tổng Lãi/Lỗ Tất Cả Bot</div>
-              <div className={`metric-value ${totalPnL >= 0 ? 'text-green' : 'text-red'}`}>
-                {formatCurrency(totalPnL)}
-              </div>
-            </div>
-            <div className="card">
-              <div className="metric-title">Số lượng Bot</div>
-              <div className="metric-value">{totalBots}</div>
-            </div>
-            <div className="card">
-              <div className="metric-title">Đang chạy (Running)</div>
-              <div className="metric-value text-green">{runningBots}</div>
-            </div>
-          </div>
-
-          <div style={{ marginBottom: '24px' }}>
-            {/* Bảng Bot Đang Triển Khai */}
-            <div className="card">
-              <h2 style={{ fontSize: 18, marginBottom: 16 }}>Thống kê Bot Đang Triển Khai</h2>
-              <div className="table-container">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Tên Chiến Thuật</th>
-                      <th>Vị Thế</th>
-                      <th>Mã</th>
-                      <th>Tín Hiệu</th>
-                      <th>Tổng Lãi & Lỗ</th>
-                      <th>% Return</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {bots.map(bot => (
-                      <tr key={bot.id}>
-                        <td style={{ fontWeight: 500 }}>{bot.strategyName}</td>
-                        <td>
-                          <span className={`badge ${bot.botType?.toLowerCase()}`}>
-                            {bot.botType}
-                          </span>
-                        </td>
-                        <td>{bot.symbol}</td>
-                        <td>{bot.results?.numberOfSignals || 0}</td>
-                        <td className={bot.results?.profit >= 0 ? 'text-green' : 'text-red'} style={{ fontWeight: 600 }}>
-                          {formatCurrency(bot.results?.profit || 0)}
-                        </td>
-                        <td className={bot.results?.return >= 0 ? 'text-green' : 'text-red'}>
-                          {((bot.results?.return || 0) * 100).toFixed(2)}%
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-
-          {chartData.length > 0 && (
-            <div className="card chart-container">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                <h2 style={{ fontSize: 18 }}>Biểu đồ Hiệu Suất (NAV)</h2>
-                
-                <select 
-                  value={selectedStrategy} 
-                  onChange={e => setSelectedStrategy(e.target.value)}
-                  style={{
-                    padding: '8px 12px',
-                    borderRadius: '6px',
-                    background: 'var(--panel-bg)',
-                    color: 'var(--text-primary)',
-                    border: '1px solid var(--border-color)',
-                    outline: 'none',
-                    cursor: 'pointer',
-                    fontFamily: 'var(--font-family)'
-                  }}
-                >
-                  {uniqueStrategies.map(name => (
-                    <option key={name} value={name}>
-                      Chiến lược: {name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData} margin={{ top: 10, right: 30, left: 10, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" vertical={false} />
-                  <XAxis 
-                    dataKey="timeLabel" 
-                    stroke="var(--text-secondary)" 
-                    tick={{fontSize: 12}} 
-                    minTickGap={40}
-                    tickMargin={10}
-                  />
-                  <YAxis 
-                    stroke="var(--text-secondary)" 
-                    tick={{fontSize: 12}} 
-                    domain={['auto', 'auto']} 
-                    tickFormatter={(value) => (value / 1000000).toFixed(1) + 'M'}
-                    width={60}
-                  />
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: 'var(--panel-bg)', borderColor: 'var(--border-color)', color: 'var(--text-primary)', borderRadius: 8 }}
-                    formatter={(value, name) => [formatCurrency(value), `Bot ${name}`]}
-                    labelStyle={{ color: 'var(--text-secondary)', marginBottom: 4 }}
-                  />
-                  <Legend wrapperStyle={{ paddingTop: 20 }} />
-                  {availableBotTypes.includes('LONG') && (
-                    <Line 
-                      isAnimationActive={false}
-                      type="monotone" 
-                      dataKey="LONG" 
-                      stroke="var(--success-color)" 
-                      strokeWidth={3} 
-                      dot={false} 
-                      activeDot={{ r: 6, strokeWidth: 0 }}
-                      name="LONG" 
-                      connectNulls={true}
-                    />
-                  )}
-                  {availableBotTypes.includes('SHORT') && (
-                    <Line 
-                      isAnimationActive={false}
-                      type="monotone" 
-                      dataKey="SHORT" 
-                      stroke="var(--danger-color)" 
-                      strokeWidth={3} 
-                      dot={false} 
-                      activeDot={{ r: 6, strokeWidth: 0 }}
-                      name="SHORT" 
-                      connectNulls={true}
-                    />
-                  )}
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-
-          {/* Bảng Xếp Hạng Thực Tế Dành Cho Giao Diện Web */}
-          <div className="card" style={{ padding: '32px', marginBottom: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32, flexWrap: 'wrap', gap: 16 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                <Award size={36} color="#f5b71b" />
-                <div>
-                  <h2 style={{ fontSize: 24, fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>Bảng Xếp Hạng Hiệu Suất</h2>
-                  <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 4 }}>Top các Bot mang lại lợi nhuận cao nhất</p>
-                </div>
-              </div>
-              
-              <div style={{ display: 'flex', gap: 8, background: 'var(--bg-color)', padding: 4, borderRadius: 8, border: '1px solid var(--border-color)' }}>
-                {[
-                  { id: 'day', label: 'Hôm Nay' },
-                  { id: 'week', label: 'Tuần Này' },
-                  { id: 'month', label: 'Tháng Này' },
-                  { id: 'year', label: 'Năm Nay' }
-                ].map(tab => (
-                  <button 
-                    key={tab.id}
-                    onClick={() => setLeaderboardTimeframe(tab.id)}
-                    style={{ 
-                      padding: '8px 16px', borderRadius: 6, border: 'none', fontWeight: 600,
-                      background: leaderboardTimeframe === tab.id ? 'var(--accent-color)' : 'transparent',
-                      color: leaderboardTimeframe === tab.id ? '#fff' : 'var(--text-secondary)'
-                    }}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
-
-              <button onClick={exportLeaderboard} className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--accent-color)', fontWeight: 'bold', padding: '12px 20px' }}>
-                <ImageIcon size={20} /> TẢI ẢNH BXH XỊN XÒ (HD)
+      {/* Main Area: Chart & Live Signals */}
+      <div className="main-area">
+        {/* Lệnh trái: Chart */}
+        <div className="card" style={{ display: 'flex', flexDirection: 'column' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <h2 style={{ fontSize: '18px', fontWeight: 600 }}>Biểu Đồ Hiệu Suất</h2>
+            <div style={{ display: 'flex', gap: '4px', background: 'var(--bg-color)', padding: '4px', borderRadius: '8px' }}>
+              <button 
+                onClick={() => setChartMode('total')}
+                style={{ fontSize: '13px', padding: '6px 12px', background: chartMode === 'total' ? '#fff' : 'transparent', border: 'none', borderRadius: '4px', fontWeight: chartMode === 'total' ? 600 : 400, boxShadow: chartMode === 'total' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', color: chartMode === 'total' ? 'var(--text-primary)' : 'var(--text-secondary)' }}
+              >
+                Tổng NAV
+              </button>
+              <button 
+                onClick={() => setChartMode('compare')}
+                style={{ fontSize: '13px', padding: '6px 12px', background: chartMode === 'compare' ? '#fff' : 'transparent', border: 'none', borderRadius: '4px', fontWeight: chartMode === 'compare' ? 600 : 400, boxShadow: chartMode === 'compare' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', color: chartMode === 'compare' ? 'var(--text-primary)' : 'var(--text-secondary)' }}
+              >
+                So sánh Bot (PnL)
               </button>
             </div>
-            
-            {/* Top 3 Flex Grid */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', justifyContent: 'center', gap: '24px', marginBottom: '32px', minHeight: '320px' }}>
-              {leaderboard.slice(0, 3).map((bot, i) => {
-                // Sắp xếp lại thứ tự: Hạng 2, Hạng 1, Hạng 3 để tạo bục vinh quang
-                const index = i === 0 ? 1 : i === 1 ? 0 : 2; 
-                const actualBot = leaderboard[index];
-                if (!actualBot) return null;
-                
-                const isGold = index === 0;
-                const isSilver = index === 1;
-                const bgGradient = isGold ? 'linear-gradient(180deg, #fffdf7 0%, #fff 58%, #fff9e9 100%)' :
-                                   isSilver ? 'linear-gradient(180deg, #f7fbff, #cbd9e8)' :
-                                   'linear-gradient(180deg, #fffaf6, #fff 65%, #fff6ee)';
-                const borderColor = isGold ? 'rgba(245,183,27,0.82)' : isSilver ? 'rgba(162,191,222,0.72)' : 'rgba(215,154,92,0.62)';
-
+          </div>
+          
+          {chartMode === 'compare' && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px' }}>
+              {processedBots.map((bot, idx) => {
+                const isHidden = hiddenBots.includes(bot.uniqueAlias);
                 return (
-                  <div key={actualBot.id} style={{ 
-                    flex: '1 1 250px',
-                    maxWidth: '350px',
-                    minHeight: isGold ? '320px' : isSilver ? '280px' : '260px',
-                    background: bgGradient, 
-                    border: `1.5px solid ${borderColor}`,
-                    borderRadius: '28px',
-                    padding: isGold ? '40px 24px 24px' : '30px 24px 24px',
-                    textAlign: 'center',
-                    boxShadow: isGold ? `0 24px 48px rgba(245,183,27,0.23)` : '0 22px 44px rgba(8,33,79,0.1)',
-                    position: 'relative',
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                    order: isGold ? 2 : isSilver ? 1 : 3
-                  }}>
-                    {isGold && (
-                      <div style={{ position: 'absolute', top: -16, background: '#f5b71b', padding: '4px 16px', borderRadius: 20, color: '#fff', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 4, boxShadow: '0 4px 12px rgba(245,183,27,0.4)' }}>
-                        <Crown size={16} /> TOP 1 XUẤT SẮC
-                      </div>
-                    )}
-                    <div style={{ 
-                      width: isGold ? '64px' : '48px', height: isGold ? '64px' : '48px', 
-                      borderRadius: isGold ? '42px' : '30px', 
-                      background: isGold ? 'linear-gradient(145deg, #fff7cf, #f5b71b 58%, #fff0b2)' : isSilver ? 'linear-gradient(145deg, #f7fbff, #cbd9e8)' : 'linear-gradient(145deg, #fff0df, #d79a5c 60%, #ffd8b0)', 
-                      color: isGold ? '#9b5c00' : isSilver ? '#536781' : '#7a3f13',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', 
-                      fontSize: isGold ? '28px' : '20px', fontWeight: 900, marginBottom: '16px',
-                      border: isGold ? '3px solid #ffdf7b' : isSilver ? '2px solid #dfe8f3' : '2px solid #f0bd87',
-                      boxShadow: '0 12px 24px rgba(8,33,79,0.15)'
-                    }}>
-                      {index + 1}
-                    </div>
-                    <div style={{ fontSize: isGold ? '22px' : '18px', fontWeight: 800, marginBottom: '8px', color: 'var(--text-primary)' }}>
-                      {actualBot.strategyName}
-                    </div>
-                    <div style={{ marginBottom: '16px' }}>
-                      <span className={`badge ${actualBot.botType?.toLowerCase()}`} style={{ fontSize: 11, marginRight: 8 }}>{actualBot.botType}</span>
-                      <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{actualBot.symbol}</span>
-                    </div>
-                    <div className={actualBot.todayProfit > 0 ? 'text-green' : actualBot.todayProfit < 0 ? 'text-red' : ''} style={{ fontSize: '24px', fontWeight: 800 }}>
-                      {actualBot.todayProfit > 0 ? '+' : ''}{formatCurrency(actualBot.todayProfit)}
-                    </div>
-                  </div>
+                  <button
+                    key={bot.id}
+                    onClick={() => toggleBotVisibility(bot.uniqueAlias)}
+                    style={{
+                      fontSize: '12px',
+                      padding: '4px 10px',
+                      borderRadius: '16px',
+                      border: `1px solid ${isHidden ? 'var(--border-color)' : COLORS[idx % COLORS.length]}`,
+                      background: isHidden ? 'transparent' : `${COLORS[idx % COLORS.length]}15`,
+                      color: isHidden ? 'var(--text-secondary)' : COLORS[idx % COLORS.length],
+                      fontWeight: isHidden ? 400 : 600,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: isHidden ? 'transparent' : COLORS[idx % COLORS.length], border: `1px solid ${COLORS[idx % COLORS.length]}` }}></div>
+                    {bot.uniqueAlias}
+                  </button>
                 );
               })}
             </div>
-            
-            {/* Danh sách các bot còn lại */}
-            {leaderboard.length > 3 && (
-              <div style={{ background: 'var(--bg-color)', borderRadius: '16px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
-                {leaderboard.slice(3, 10).map((bot, index) => (
-                  <div key={bot.id} style={{ 
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
-                    padding: '16px 24px', 
-                    borderBottom: index < Math.min(leaderboard.length - 4, 6) ? '1px solid var(--border-color)' : 'none',
-                    background: index % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.02)'
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-                      <div style={{ width: '32px', fontSize: '18px', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'center' }}>
-                        #{index + 4}
-                      </div>
-                      <div>
-                        <div style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '4px' }}>{bot.strategyName}</div>
-                        <div style={{ fontSize: '13px', color: 'var(--text-secondary)', display: 'flex', gap: '8px', alignItems: 'center' }}>
-                          <span className={`badge ${bot.botType?.toLowerCase()}`} style={{ padding: '2px 4px', fontSize: 10 }}>{bot.botType}</span>
-                          <span>•</span>
-                          <span>{bot.symbol}</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className={bot.todayProfit > 0 ? 'text-green' : bot.todayProfit < 0 ? 'text-red' : ''} style={{ fontSize: '18px', fontWeight: 700 }}>
-                      {bot.todayProfit > 0 ? '+' : ''}{formatCurrency(bot.todayProfit)}
-                    </div>
-                  </div>
-                ))}
+          )}
+
+          <div className="chart-container">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" opacity={0.5} vertical={false}/>
+                <XAxis dataKey="time" tick={{ fontSize: 12, fill: 'var(--text-secondary)' }} tickMargin={10}/>
+                
+                {chartMode === 'total' ? (
+                  <>
+                    <YAxis domain={['auto', 'auto']} tickFormatter={(v) => (v/1000000).toFixed(1) + 'M'} tick={{ fontSize: 12, fill: 'var(--text-secondary)' }} width={60}/>
+                    <Tooltip formatter={(value) => formatCurrency(value)} labelStyle={{ color: '#000', fontWeight: 'bold' }}/>
+                    <Line type="monotone" dataKey="totalNav" stroke="var(--accent-color)" strokeWidth={3} dot={false} name="Tổng NAV"/>
+                  </>
+                ) : (
+                  <>
+                    <YAxis domain={['auto', 'auto']} tickFormatter={(v) => (v/1000000).toFixed(1) + 'M'} tick={{ fontSize: 12, fill: 'var(--text-secondary)' }} width={60}/>
+                    <Tooltip formatter={(value) => formatCurrency(value)} labelStyle={{ color: '#000', fontWeight: 'bold' }}/>
+                    {processedBots.map((bot, idx) => (
+                      !hiddenBots.includes(bot.uniqueAlias) && (
+                        <Line key={bot.id} type="monotone" dataKey={bot.uniqueAlias} stroke={COLORS[idx % COLORS.length]} strokeWidth={2} dot={false} name={bot.uniqueAlias}/>
+                      )
+                    ))}
+                  </>
+                )}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Lệnh phải: Live Signals */}
+        <div className="card signals-container">
+          <h2 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Radio size={20} color="var(--danger-color)"/> Live Signals
+          </h2>
+          <div className="signals-list">
+            {liveSignals.length > 0 ? liveSignals.map((sig, idx) => (
+              <div key={idx} className="signal-item">
+                <div>
+                  <div className="signal-time">{sig.displayTime}</div>
+                  <div className="signal-content">{sig.strategy}</div>
+                </div>
+                <div className={`badge ${sig.type?.toLowerCase()}`}>
+                  {sig.type}
+                </div>
+              </div>
+            )) : (
+              <div style={{ textAlign: 'center', color: 'var(--text-secondary)', marginTop: '40px' }}>
+                <AlertCircle size={32} style={{ margin: '0 auto 8px', opacity: 0.5 }}/>
+                Chưa có tín hiệu nào
               </div>
             )}
           </div>
+        </div>
+      </div>
 
-          {/* Component Bảng Xếp Hạng Siêu To Khổng Lồ ẩn dưới nền để phục vụ việc xuất ảnh */}
-          <EpicLeaderboard 
-            ref={epicLeaderboardRef} 
-            leaderboard={leaderboard} 
-            timeframe={leaderboardTimeframe}
-            dateStr={new Date().toLocaleDateString('vi-VN')} 
-          />
-        </>
-      )}
+      {/* Bot Table */}
+      <div className="card" style={{ marginBottom: '24px' }}>
+        <h2 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '16px' }}>Thống Kê Bot Chi Tiết</h2>
+        <div className="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Chiến Thuật</th>
+                <th>Trạng Thái</th>
+                <th>Mã Hợp Đồng</th>
+                <th>Vị Thế</th>
+                <th>Giá Vào Lệnh</th>
+                <th>Tín Hiệu Cuối</th>
+                <th>Winrate / Lệnh</th>
+                <th>Drawdown</th>
+                <th>PnL Hôm Nay</th>
+                <th>Return</th>
+              </tr>
+            </thead>
+            <tbody>
+              {processedBots.map((bot) => (
+                <tr key={bot.id}>
+                  <td style={{ fontWeight: 600 }}>{bot.alias}</td>
+                  <td>
+                    <span className={`badge ${bot.displayStatus === 'Running' ? 'running' : 'paused'}`}>
+                      {bot.displayStatus}
+                    </span>
+                  </td>
+                  <td>{bot.symbol}</td>
+                  <td>
+                    <span className={`badge ${bot.botType ? bot.botType.toLowerCase() : 'none'}`}>
+                      {bot.botType || 'NEUTRAL'}
+                    </span>
+                  </td>
+                  <td>{bot.entryPrice}</td>
+                  <td>{bot.lastSignalTime}</td>
+                  <td>{bot.winrate}% ({bot.tradesCount})</td>
+                  <td className="text-red">{bot.drawdown}</td>
+                  <td className={`font-medium ${(bot.timeframeProfit || 0) >= 0 ? 'text-green' : 'text-red'}`}>
+                    {(bot.timeframeProfit || 0) >= 0 ? '+' : ''}{formatCurrency(bot.timeframeProfit || 0)}
+                  </td>
+                  <td className={(bot.timeframeReturn || 0) >= 0 ? 'text-green' : 'text-red'}>
+                    {(bot.timeframeReturn || 0) >= 0 ? '+' : ''}{(bot.timeframeReturn || 0).toFixed(2)}%
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Leaderboard Export Section */}
+      <div className="card" style={{ textAlign: 'center' }}>
+        <div style={{ display: 'inline-flex', justifyContent: 'center', marginBottom: '16px' }}>
+           <Crown size={48} color="var(--warning-color)" />
+        </div>
+        <h2 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '8px' }}>Bảng Xếp Hạng Truyền Thông</h2>
+        <p style={{ color: 'var(--text-secondary)', marginBottom: '24px' }}>Dữ liệu xếp hạng dựa trên PnL, Return, và số lệnh giao dịch.</p>
+
+        <button onClick={exportLeaderboard} className="btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', marginBottom: '24px' }}>
+          <ImageIcon size={20} />
+          Tải Ảnh Bảng Xếp Hạng (HD)
+        </button>
+
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', flexWrap: 'wrap', justifyContent: 'center' }}>
+          <div style={{ color: 'var(--text-secondary)', marginRight: '8px', display: 'flex', alignItems: 'center' }}>Lọc Khung Thời Gian:</div>
+          {['ALL', 'DAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR'].map(tf => (
+            <button
+              key={tf}
+              onClick={() => setTimeframe(tf)}
+              style={{
+                fontSize: '13px',
+                padding: '6px 16px',
+                borderRadius: '20px',
+                border: 'none',
+                background: timeframe === tf ? 'var(--accent-color)' : 'var(--bg-color)',
+                color: timeframe === tf ? '#fff' : 'var(--text-secondary)',
+                fontWeight: timeframe === tf ? 600 : 400,
+                cursor: 'pointer'
+              }}
+            >
+              {tf === 'ALL' ? 'Tất cả' : tf === 'DAY' ? 'Hôm nay' : tf === 'WEEK' ? 'Tuần' : tf === 'MONTH' ? 'Tháng' : tf === 'QUARTER' ? 'Quý' : 'Năm'}
+            </button>
+          ))}
+        </div>
+
+        <div 
+          ref={previewWrapperRef} 
+          style={{ width: '100%', overflow: 'hidden', padding: '16px 0', height: previewStyle.height, transition: 'height 0.2s ease' }}
+        >
+          <div style={{
+            transform: `scale(${previewStyle.scale})`,
+            transformOrigin: 'top left',
+            width: '1200px',
+            margin: previewStyle.scale === 1 ? '0 auto' : '0'
+          }}>
+            <div 
+              ref={previewContentRef}
+              style={{ minWidth: '1200px', width: '1200px', boxShadow: '0 10px 40px rgba(0,0,0,0.1)', borderRadius: '24px', overflow: 'hidden' }}
+            >
+              <EpicLeaderboard 
+                leaderboard={leaderboard} 
+                dateStr={dateStr}
+                timeframe={timeframe}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
-}
+};
+
+const App = () => {
+  return (
+    <ErrorBoundary>
+      <AppContent />
+    </ErrorBoundary>
+  );
+};
 
 export default App;
