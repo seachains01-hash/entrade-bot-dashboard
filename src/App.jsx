@@ -160,21 +160,14 @@ const processBotData = (bot, tf) => {
 
 const CustomTooltip = ({ active, payload, label }) => {
   if (active && payload && payload.length) {
-    const data = payload[0].payload;
-    const activeBotAlias = data.activeBotAlias;
-    
-    // Nếu là điểm Start (không có activeBot), có thể hiện tổng quan hoặc ẩn
-    if (!activeBotAlias) return null;
-
-    // Lọc ra bot thực sự có giao dịch tại điểm này
-    const item = payload.find(p => p.dataKey === activeBotAlias);
-    if (!item) return null;
-
+    const item = payload[0];
     const botAlias = item.dataKey;
+    if (botAlias === 'totalNav' || botAlias === 'totalInvested' || botAlias === 'activeBotAlias') return null;
     
     const botNav = item.value;
     const botPnL = botNav - 30000000;
     
+    const data = item.payload;
     const totalNav = data.totalNav;
     const totalInvested = data.totalInvested || 30000000;
     const totalPnL = totalNav - totalInvested;
@@ -786,10 +779,10 @@ const AppContent = () => {
                 ) : (
                   <>
                     <YAxis domain={['auto', 'auto']} tickFormatter={(v) => (v/1000000).toFixed(1) + 'M'} tick={{ fontSize: 12, fill: 'var(--text-secondary)' }} width={60}/>
-                    <Tooltip shared={true} content={<CustomTooltip />} cursor={{ strokeDasharray: '3 3' }} />
+                    <Tooltip shared={false} content={<CustomTooltip />} cursor={{ strokeDasharray: '3 3' }} />
                     {processedBots.map((bot, idx) => (
                       !hiddenBots.includes(bot.uniqueAlias) && (
-                        <Line key={bot.id} type="monotone" dataKey={bot.uniqueAlias} stroke={COLORS[idx % COLORS.length]} strokeWidth={2} dot={false} name={bot.uniqueAlias}/>
+                        <Line key={bot.id} type="monotone" dataKey={bot.uniqueAlias} stroke={COLORS[idx % COLORS.length]} strokeWidth={2} dot={false} activeDot={{ r: 6, strokeWidth: 0 }} name={bot.uniqueAlias}/>
                       )
                     ))}
                   </>
