@@ -290,34 +290,69 @@ const AppContent = () => {
 
     let currentTotalNav = 30000000 * processedBots.length;
     const currentPnL = {};
-    processedBots.forEach(bot => currentPnL[bot.uniqueAlias] = 30000000); // Khởi tạo mức đầu tư ban đầu là 30M
+    processedBots.forEach(bot => currentPnL[bot.uniqueAlias] = 30000000);
 
     const chartPoints = [];
     
-    // Khởi tạo điểm đầu tiên
-    chartPoints.push({
-      time: 'Start',
-      totalNav: currentTotalNav,
-      totalInvested: 30000000 * processedBots.length,
-      ...currentPnL
-    });
+    if (allDeals.length === 0) {
+      chartPoints.push({
+        time: 'Start',
+        totalNav: currentTotalNav,
+        ...currentPnL
+      });
+      return chartPoints;
+    }
 
-    allDeals.forEach(deal => {
-      let timeStr = deal.closeTimeRaw.toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit' });
-      if (timeframe !== 'DAY') {
-        timeStr = deal.closeTimeRaw.toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', day: '2-digit', month: '2-digit' }) + ' ' + timeStr;
+    // Tạo các mốc thời gian dày đặc (dense data) để Recharts Voronoi bắt hover chuẩn xác
+    let startTime = allDeals[0].closeTimeRaw.getTime() - (12 * 60 * 60 * 1000); // 12h trước deal đầu tiên
+    const endTime = new Date().getTime(); // Hiện tại
+    
+    const duration = Math.max(endTime - startTime, 24 * 60 * 60 * 1000);
+    const targetPoints = 120; // Đủ dày để rê chuột mượt mà
+    const step = Math.max(duration / targetPoints, 10 * 60 * 1000); // Tối thiểu 10p/mốc
+
+    let dealIdx = 0;
+    for (let t = startTime; t <= endTime; t += step) {
+      while (dealIdx < allDeals.length && allDeals[dealIdx].closeTimeRaw.getTime() <= t) {
+        const deal = allDeals[dealIdx];
+        currentPnL[deal.uniqueAlias] += (deal.netProfit || 0);
+        currentTotalNav += (deal.netProfit || 0);
+        dealIdx++;
       }
-      
-      currentPnL[deal.uniqueAlias] += (deal.netProfit || 0);
-      currentTotalNav += (deal.netProfit || 0);
-      
+
+      const d = new Date(t);
+      let timeStr = d.toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit' });
+      if (timeframe !== 'DAY') {
+        timeStr = d.toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', day: '2-digit', month: '2-digit' }) + ' ' + timeStr;
+      }
+
       chartPoints.push({
         time: timeStr,
         totalNav: currentTotalNav,
         totalInvested: 30000000 * processedBots.length,
-        activeBotAlias: deal.uniqueAlias,
         ...currentPnL
       });
+    }
+
+    // Đảm bảo không sót các deal cuối
+    while (dealIdx < allDeals.length) {
+      const deal = allDeals[dealIdx];
+      currentPnL[deal.uniqueAlias] += (deal.netProfit || 0);
+      currentTotalNav += (deal.netProfit || 0);
+      dealIdx++;
+    }
+
+    // Điểm chốt hiện tại
+    const d = new Date(endTime);
+    let timeStr = d.toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit' });
+    if (timeframe !== 'DAY') {
+      timeStr = d.toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', day: '2-digit', month: '2-digit' }) + ' ' + timeStr;
+    }
+    chartPoints.push({
+      time: timeStr,
+      totalNav: currentTotalNav,
+      totalInvested: 30000000 * processedBots.length,
+      ...currentPnL
     });
 
     return chartPoints;
@@ -782,7 +817,7 @@ const AppContent = () => {
                 onMouseLeave={() => setMouseY(null)}
               >
                 <CartesianGrid strokeDasharray="3 3" opacity={0.5} vertical={false}/>
-                <XAxis dataKey="time" tick={{ fontSize: 12, fill: 'var(--text-secondary)' }} tickMargin={10}/>
+                <XAxis dataKey="time" minTickGap={60} tick={{ fontSize: 12, fill: 'var(--text-secondary)' }} tickMargin={10}/>
                 
                 {chartMode === 'total' ? (
                   <>
