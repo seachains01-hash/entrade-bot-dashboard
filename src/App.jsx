@@ -886,9 +886,9 @@ const AppContent = () => {
                 </div>
                 <div style={{ color: COLORS[processedBots.findIndex(b => b.uniqueAlias === hoveredLineBot) % COLORS.length], fontWeight: 600, marginBottom: '12px', fontSize: '14px' }}>
                   <div style={{ marginBottom: '4px' }}>{hoveredBotData.uniqueAlias}</div>
-                  <div>NAV: {formatCurrency(hoveredBotData.results?.profit || 30000000)}</div>
-                  <div>PnL: <span style={{ color: (hoveredBotData.results?.profit || 30000000) >= 30000000 ? 'var(--success-color)' : 'var(--danger-color)' }}>
-                     {(hoveredBotData.results?.profit || 30000000) > 30000000 ? '+' : ''}{formatCurrency((hoveredBotData.results?.profit || 30000000) - 30000000)}
+                  <div>NAV: {formatCurrency(30000000 + (hoveredBotData.timeframeProfit || 0))}</div>
+                  <div>PnL: <span style={{ color: (hoveredBotData.timeframeProfit || 0) >= 0 ? 'var(--success-color)' : 'var(--danger-color)' }}>
+                     {(hoveredBotData.timeframeProfit || 0) > 0 ? '+' : ''}{formatCurrency(hoveredBotData.timeframeProfit || 0)}
                   </span></div>
                 </div>
               </div>
