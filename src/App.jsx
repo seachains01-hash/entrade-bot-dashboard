@@ -159,6 +159,7 @@ const processBotData = (bot, tf) => {
 };
 // Global variable for dot coordinates to bypass React StrictMode freezing
 const globalDotCoords = {};
+let globalActiveKeys = [];
 
 const CustomActiveDot = (props) => {
   const { cx, cy, dataKey, stroke, hoveredBot } = props;
@@ -224,7 +225,31 @@ const AppContent = () => {
   const [hiddenBots, setHiddenBots] = useState([]);
   
   const [mouseY, setMouseY] = useState(null);
+  const [mouseX, setMouseX] = useState(null);
   const [hoveredBot, setHoveredBot] = useState(null);
+  
+  // Calculate closest bot after render, ensuring we have fresh dot coords
+  useEffect(() => {
+    if (mouseY !== null) {
+      let closest = null;
+      let minDistance = 30; // 30px snap radius
+      
+      globalActiveKeys.forEach(key => {
+        const cy = globalDotCoords[key];
+        if (cy !== undefined) {
+          const dist = Math.abs(cy - mouseY);
+          if (dist < minDistance) {
+            minDistance = dist;
+            closest = key;
+          }
+        }
+      });
+      
+      setHoveredBot(closest);
+    } else {
+      setHoveredBot(null);
+    }
+  }, [mouseY, mouseX]);
   
   const [timeframe, setTimeframe] = useState('ALL'); // 'DAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR', 'ALL'
   const [isMockMode, setIsMockMode] = useState(false);
@@ -787,31 +812,15 @@ const AppContent = () => {
               <LineChart 
                 data={chartData}
                 onMouseMove={(e) => {
-                  if (e && e.chartY) {
+                  if (e && e.chartY && e.chartX) {
                     setMouseY(e.chartY);
-                    
-                    let closest = null;
-                    let minDistance = 30; // 30px snap radius
-                    
-                    const currentActiveKeys = e.activePayload ? e.activePayload.map(p => p.dataKey) : [];
-                    
-                    currentActiveKeys.forEach(key => {
-                      const cy = globalDotCoords[key];
-                      if (cy !== undefined) {
-                        const dist = Math.abs(cy - e.chartY);
-                        if (dist < minDistance) {
-                          minDistance = dist;
-                          closest = key;
-                        }
-                      }
-                    });
-                    
-                    setHoveredBot(closest);
+                    setMouseX(e.chartX);
+                    globalActiveKeys = e.activePayload ? e.activePayload.map(p => p.dataKey) : [];
                   }
                 }}
                 onMouseLeave={() => {
                   setMouseY(null);
-                  setHoveredBot(null);
+                  setMouseX(null);
                 }}
               >
                 <CartesianGrid strokeDasharray="3 3" opacity={0.5} vertical={false}/>
