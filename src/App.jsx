@@ -217,7 +217,8 @@ const AppContent = () => {
   const [chartMode, setChartMode] = useState('total'); // 'total' or 'compare'
   const [hiddenBots, setHiddenBots] = useState([]);
   
-  const [mouseY, setMouseY] = useState(null);
+  const [hoveredLineBot, setHoveredLineBot] = useState(null);
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
   
   const [timeframe, setTimeframe] = useState('ALL'); // 'DAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR', 'ALL'
   const [isMockMode, setIsMockMode] = useState(false);
@@ -293,9 +294,8 @@ const AppContent = () => {
 
     let currentTotalNav = 30000000 * processedBots.length;
     const currentPnL = {};
-    processedBots.forEach((bot, idx) => {
-      // THÊM NHIỄU VORONOI: Thêm 0.001 * idx để fix lỗi Recharts ko nhận diện được các điểm trùng lấp 100%
-      currentPnL[bot.uniqueAlias] = 30000000 + (idx * 0.001);
+    processedBots.forEach((bot) => {
+      currentPnL[bot.uniqueAlias] = 30000000;
     });
 
     const chartPoints = [];
@@ -539,6 +539,11 @@ const AppContent = () => {
       prev.includes(alias) ? prev.filter(a => a !== alias) : [...prev, alias]
     );
   };
+
+  const hoveredBotData = useMemo(() => {
+    if (!hoveredLineBot) return null;
+    return processedBots.find(b => b.uniqueAlias === hoveredLineBot);
+  }, [hoveredLineBot, processedBots]);
 
   const handleLogout = () => {
     localStorage.removeItem('entrade_token');
@@ -793,15 +798,23 @@ const AppContent = () => {
             </div>
           )}
 
-          <div className="chart-container">
+          <div 
+            className="chart-container"
+            onMouseMove={(e) => {
+              if (chartMode === 'compare') {
+                const rect = e.currentTarget.getBoundingClientRect();
+                setMousePos({ x: e.clientX, y: e.clientY });
+              }
+            }}
+            onMouseLeave={() => {
+              if (chartMode === 'compare') {
+                setHoveredLineBot(null);
+              }
+            }}
+            style={{ position: 'relative' }}
+          >
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart 
-                data={chartData}
-                onMouseMove={(e) => {
-                  if (e && e.chartY) setMouseY(e.chartY);
-                }}
-                onMouseLeave={() => setMouseY(null)}
-              >
+              <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" opacity={0.5} vertical={false}/>
                 <XAxis dataKey="time" minTickGap={30} tick={{ fontSize: 12, fill: 'var(--text-secondary)' }} tickMargin={10}/>
                 
@@ -814,16 +827,72 @@ const AppContent = () => {
                 ) : (
                   <>
                     <YAxis domain={['auto', 'auto']} tickFormatter={(v) => (v/1000000).toFixed(1) + 'M'} tick={{ fontSize: 12, fill: 'var(--text-secondary)' }} width={60}/>
-                    <Tooltip shared={false} content={<CustomTooltip mouseY={mouseY} />} cursor={{ strokeDasharray: '3 3' }} />
+                    
                     {processedBots.map((bot, idx) => (
                       !hiddenBots.includes(bot.uniqueAlias) && (
-                        <Line key={bot.id} type="monotone" dataKey={bot.uniqueAlias} stroke={COLORS[idx % COLORS.length]} strokeWidth={2} dot={false} activeDot={{ r: 6, strokeWidth: 0 }} name={bot.uniqueAlias}/>
+                        <Line 
+                          key={`visible-${bot.id}`} 
+                          type="monotone" 
+                          dataKey={bot.uniqueAlias} 
+                          stroke={COLORS[idx % COLORS.length]} 
+                          strokeWidth={hoveredLineBot === bot.uniqueAlias ? 4 : 2} 
+                          dot={false} 
+                          activeDot={false} 
+                          isAnimationActive={false}
+                          style={{ pointerEvents: 'none' }}
+                        />
+                      )
+                    ))}
+                    
+                    {processedBots.map((bot, idx) => (
+                      !hiddenBots.includes(bot.uniqueAlias) && (
+                        <Line 
+                          key={`hitbox-${bot.id}`} 
+                          type="monotone" 
+                          dataKey={bot.uniqueAlias} 
+                          stroke="transparent" 
+                          strokeWidth={24} 
+                          dot={false} 
+                          activeDot={false} 
+                          isAnimationActive={false}
+                          onMouseEnter={() => setHoveredLineBot(bot.uniqueAlias)}
+                          style={{ cursor: 'crosshair' }}
+                        />
                       )
                     ))}
                   </>
                 )}
               </LineChart>
             </ResponsiveContainer>
+
+            {chartMode === 'compare' && hoveredLineBot && hoveredBotData && (
+              <div 
+                style={{
+                  position: 'fixed',
+                  left: mousePos.x + 15,
+                  top: mousePos.y + 15,
+                  background: '#fff',
+                  border: '1px solid #e5e7eb',
+                  padding: '12px',
+                  borderRadius: '8px',
+                  fontSize: '13px',
+                  boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)',
+                  pointerEvents: 'none',
+                  zIndex: 9999
+                }}
+              >
+                <div style={{ fontWeight: 600, marginBottom: '8px', color: 'var(--text-secondary)' }}>
+                  Thông tin Bot (Mới nhất)
+                </div>
+                <div style={{ color: COLORS[processedBots.findIndex(b => b.uniqueAlias === hoveredLineBot) % COLORS.length], fontWeight: 600, marginBottom: '12px', fontSize: '14px' }}>
+                  <div style={{ marginBottom: '4px' }}>{hoveredBotData.uniqueAlias}</div>
+                  <div>NAV: {formatCurrency(hoveredBotData.results?.profit || 30000000)}</div>
+                  <div>PnL: <span style={{ color: (hoveredBotData.results?.profit || 30000000) >= 30000000 ? 'var(--success-color)' : 'var(--danger-color)' }}>
+                     {(hoveredBotData.results?.profit || 30000000) > 30000000 ? '+' : ''}{formatCurrency((hoveredBotData.results?.profit || 30000000) - 30000000)}
+                  </span></div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
