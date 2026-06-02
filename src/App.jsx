@@ -156,6 +156,7 @@ const processBotData = (bot, tf) => {
     timeframeProfit: profit,
     timeframeReturn: returnPct
   };
+};
 // Global variable for dot coordinates to bypass React StrictMode freezing
 const globalDotCoords = {};
 
