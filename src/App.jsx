@@ -79,10 +79,14 @@ const processBotData = (bot, tf) => {
   const winDeals = deals.filter(d => d.netProfit > 0).length;
   const winrate = deals.length > 0 ? ((winDeals / deals.length) * 100).toFixed(1) : 0;
   
-  // Tìm lệnh gần nhất trên toàn bộ lịch sử (không phụ thuộc timeframe)
-  const allSortedDealsDesc = [...allDeals].sort((a,b) => new Date(b.closeTime) - new Date(a.closeTime));
+  // Tìm lệnh gần nhất trên toàn bộ lịch sử (ưu tiên lệnh mới nhất dựa vào openTime hoặc closeTime)
+  const allSortedDealsDesc = [...allDeals].sort((a,b) => {
+    const timeA = new Date(a.closeTime || a.openTime || 0).getTime();
+    const timeB = new Date(b.closeTime || b.openTime || 0).getTime();
+    return timeB - timeA;
+  });
   const absoluteLastDeal = allSortedDealsDesc[0];
-  let lastSignalTime = bot.updateTime || bot.updatedAt || bot.createTime || (absoluteLastDeal ? (absoluteLastDeal.closeTime || absoluteLastDeal.openTime) : null);
+  let lastSignalTime = absoluteLastDeal ? (absoluteLastDeal.closeTime || absoluteLastDeal.openTime) : null;
   
   let formattedLastTime = '-';
   if (lastSignalTime) {
