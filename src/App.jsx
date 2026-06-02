@@ -820,13 +820,13 @@ const AppContent = () => {
                 
                 {chartMode === 'total' ? (
                   <>
-                    <YAxis domain={['auto', 'auto']} tickFormatter={(v) => (v/1000000).toFixed(1) + 'M'} tick={{ fontSize: 12, fill: 'var(--text-secondary)' }} width={60}/>
+                    <YAxis domain={['auto', 'auto']} tickFormatter={(v) => (v/1000000).toFixed(2) + 'M'} tick={{ fontSize: 12, fill: 'var(--text-secondary)' }} width={60}/>
                     <Tooltip formatter={(value) => formatCurrency(value)} labelStyle={{ color: '#000', fontWeight: 'bold' }}/>
                     <Line type="monotone" dataKey="totalNav" stroke="var(--accent-color)" strokeWidth={3} dot={false} name="Tổng NAV"/>
                   </>
                 ) : (
                   <>
-                    <YAxis domain={['auto', 'auto']} tickFormatter={(v) => (v/1000000).toFixed(1) + 'M'} tick={{ fontSize: 12, fill: 'var(--text-secondary)' }} width={60}/>
+                    <YAxis domain={['auto', 'auto']} tickFormatter={(v) => (v/1000000).toFixed(2) + 'M'} tick={{ fontSize: 12, fill: 'var(--text-secondary)' }} width={60}/>
                     
                     {processedBots.map((bot, idx) => (
                       !hiddenBots.includes(bot.uniqueAlias) && (
