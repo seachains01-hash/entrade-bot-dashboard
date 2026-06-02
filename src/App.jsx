@@ -159,13 +159,20 @@ const processBotData = (bot, tf) => {
 };
 // Global variable for dot coordinates to bypass React StrictMode freezing
 const globalDotCoords = {};
+let setGlobalHoveredBot = null;
 
 const CustomActiveDot = (props) => {
-  const { cx, cy, dataKey, stroke } = props;
+  const { cx, cy, dataKey, stroke, hoveredBot } = props;
   
-  globalDotCoords[dataKey] = cy;
+  if (dataKey) {
+    globalDotCoords[dataKey] = cy;
+  }
   
-  return <circle cx={cx} cy={cy} r={4} fill={stroke} stroke="#fff" strokeWidth={1} style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.1))' }} />;
+  if (hoveredBot === dataKey) {
+    return <circle cx={cx} cy={cy} r={6} fill={stroke} stroke="#fff" strokeWidth={2} style={{ filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.2))' }} />;
+  }
+  
+  return <circle cx={cx} cy={cy} r={0} />;
 };
 
 const CustomTooltip = ({ active, payload, label, mouseY }) => {
@@ -183,6 +190,11 @@ const CustomTooltip = ({ active, payload, label, mouseY }) => {
         }
       }
     });
+
+    if (setGlobalHoveredBot) {
+      // Dùng timeout để tránh lỗi render infinite loop
+      setTimeout(() => setGlobalHoveredBot(closestBot), 0);
+    }
 
     if (!closestBot) return null;
 
@@ -236,6 +248,12 @@ const AppContent = () => {
   const [hiddenBots, setHiddenBots] = useState([]);
   
   const [mouseY, setMouseY] = useState(null);
+  const [hoveredBot, setHoveredBot] = useState(null);
+
+  useEffect(() => {
+    setGlobalHoveredBot = setHoveredBot;
+    return () => { setGlobalHoveredBot = null; };
+  }, []);
   
   const [timeframe, setTimeframe] = useState('ALL'); // 'DAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR', 'ALL'
   const [isMockMode, setIsMockMode] = useState(false);
@@ -287,93 +305,106 @@ const AppContent = () => {
   const chartData = useMemo(() => {
     if (processedBots.length === 0) return [];
     
-    // Thu thập tất cả các deals và sắp xếp theo thời gian
-    const allDeals = [];
+    const botTimelines = {};
+    let globalFirstTime = new Date().getTime();
+    
+    // 1. Tạo các mốc point sparse gốc cho từng bot
     processedBots.forEach(bot => {
       const history = bot.results?.deals || [];
       const filteredHistory = filterDealsByTimeframe(history, timeframe);
       
+      const botDeals = [];
       filteredHistory.forEach(deal => {
         const validT = getValidTime(deal);
         if (validT) {
           try {
-            allDeals.push({
-              ...deal,
-              uniqueAlias: bot.uniqueAlias,
-              closeTimeRaw: new Date(validT)
+            botDeals.push({
+              netProfit: deal.netProfit || 0,
+              t: new Date(validT).getTime()
             });
           } catch(e) {}
         }
       });
+      botDeals.sort((a,b) => a.t - b.t);
+      
+      if (botDeals.length > 0 && botDeals[0].t < globalFirstTime) {
+        globalFirstTime = botDeals[0].t;
+      }
+      
+      const timeline = [];
+      let currentVal = 30000000;
+      botDeals.forEach(d => {
+        currentVal += d.netProfit;
+        timeline.push({ t: d.t, val: currentVal });
+      });
+      
+      botTimelines[bot.uniqueAlias] = timeline;
+    });
+
+    const endTime = new Date().getTime();
+    let startTime = globalFirstTime - (12 * 60 * 60 * 1000);
+    if (startTime > endTime) startTime = endTime - (24 * 60 * 60 * 1000);
+
+    // 2. Chốt điểm đầu đuôi cho timeline của bot
+    processedBots.forEach(bot => {
+      const tl = botTimelines[bot.uniqueAlias];
+      if (tl.length === 0) {
+        botTimelines[bot.uniqueAlias] = [{t: startTime, val: 30000000}, {t: endTime, val: 30000000}];
+      } else {
+        botTimelines[bot.uniqueAlias] = [{t: startTime, val: 30000000}, ...tl, {t: endTime, val: tl[tl.length - 1].val}];
+      }
+    });
+
+    // Hàm nội suy đường chéo
+    const interpolate = (timeline, t) => {
+       let A = timeline[0];
+       let B = timeline[timeline.length - 1];
+       for (let i = 0; i < timeline.length - 1; i++) {
+         if (timeline[i].t <= t && timeline[i+1].t >= t) {
+            A = timeline[i];
+            B = timeline[i+1];
+            break;
+         }
+       }
+       if (A.t === B.t) return A.val;
+       return A.val + (B.val - A.val) * ((t - A.t) / (B.t - A.t));
+    };
+
+    // 3. Tạo mảng thời gian dày đặc kết hợp với các mốc gốc
+    const duration = Math.max(endTime - startTime, 24 * 60 * 60 * 1000);
+    const targetPoints = 120;
+    const step = Math.max(duration / targetPoints, 10 * 60 * 1000);
+
+    const allTimesSet = new Set();
+    for (let t = startTime; t <= endTime; t += step) {
+      allTimesSet.add(t);
+    }
+    processedBots.forEach(bot => {
+      botTimelines[bot.uniqueAlias].forEach(p => allTimesSet.add(p.t));
     });
     
-    allDeals.sort((a, b) => a.closeTimeRaw - b.closeTimeRaw);
-
-    let currentTotalNav = 30000000 * processedBots.length;
-    const currentPnL = {};
-    processedBots.forEach(bot => currentPnL[bot.uniqueAlias] = 30000000);
-
+    const allTimes = Array.from(allTimesSet).sort((a,b) => a - b);
     const chartPoints = [];
-    
-    if (allDeals.length === 0) {
-      chartPoints.push({
-        time: 'Start',
-        totalNav: currentTotalNav,
-        ...currentPnL
+
+    // 4. Áp dụng nội suy để tạo dữ liệu cho biểu đồ
+    allTimes.forEach(t => {
+      const point = { timestamp: t };
+      let total = 0;
+      processedBots.forEach(bot => {
+         const val = interpolate(botTimelines[bot.uniqueAlias], t);
+         point[bot.uniqueAlias] = val;
+         total += val;
       });
-      return chartPoints;
-    }
-
-    // Tạo các mốc thời gian dày đặc (dense data) để Recharts Voronoi bắt hover chuẩn xác
-    let startTime = allDeals[0].closeTimeRaw.getTime() - (12 * 60 * 60 * 1000); // 12h trước deal đầu tiên
-    const endTime = new Date().getTime(); // Hiện tại
-    
-    const duration = Math.max(endTime - startTime, 24 * 60 * 60 * 1000);
-    const targetPoints = 120; // Đủ dày để rê chuột mượt mà
-    const step = Math.max(duration / targetPoints, 10 * 60 * 1000); // Tối thiểu 10p/mốc
-
-    let dealIdx = 0;
-    for (let t = startTime; t <= endTime; t += step) {
-      while (dealIdx < allDeals.length && allDeals[dealIdx].closeTimeRaw.getTime() <= t) {
-        const deal = allDeals[dealIdx];
-        currentPnL[deal.uniqueAlias] += (deal.netProfit || 0);
-        currentTotalNav += (deal.netProfit || 0);
-        dealIdx++;
-      }
-
+      point.totalNav = total;
+      point.totalInvested = 30000000 * processedBots.length;
+      
       const d = new Date(t);
       let timeStr = d.toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit' });
       if (timeframe !== 'DAY') {
         timeStr = d.toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', day: '2-digit', month: '2-digit' }) + ' ' + timeStr;
       }
-
-      chartPoints.push({
-        time: timeStr,
-        totalNav: currentTotalNav,
-        totalInvested: 30000000 * processedBots.length,
-        ...currentPnL
-      });
-    }
-
-    // Đảm bảo không sót các deal cuối
-    while (dealIdx < allDeals.length) {
-      const deal = allDeals[dealIdx];
-      currentPnL[deal.uniqueAlias] += (deal.netProfit || 0);
-      currentTotalNav += (deal.netProfit || 0);
-      dealIdx++;
-    }
-
-    // Điểm chốt hiện tại
-    const d = new Date(endTime);
-    let timeStr = d.toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit' });
-    if (timeframe !== 'DAY') {
-      timeStr = d.toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', day: '2-digit', month: '2-digit' }) + ' ' + timeStr;
-    }
-    chartPoints.push({
-      time: timeStr,
-      totalNav: currentTotalNav,
-      totalInvested: 30000000 * processedBots.length,
-      ...currentPnL
+      point.time = timeStr;
+      chartPoints.push(point);
     });
 
     return chartPoints;
@@ -835,7 +866,10 @@ const AppContent = () => {
                 onMouseMove={(e) => {
                   if (e && e.chartY) setMouseY(e.chartY);
                 }}
-                onMouseLeave={() => setMouseY(null)}
+                onMouseLeave={() => {
+                  setMouseY(null);
+                  if (setGlobalHoveredBot) setGlobalHoveredBot(null);
+                }}
               >
                 <CartesianGrid strokeDasharray="3 3" opacity={0.5} vertical={false}/>
                 <XAxis dataKey="time" minTickGap={60} tick={{ fontSize: 12, fill: 'var(--text-secondary)' }} tickMargin={10}/>
@@ -852,7 +886,7 @@ const AppContent = () => {
                     <Tooltip shared={true} content={<CustomTooltip mouseY={mouseY} />} cursor={{ strokeDasharray: '3 3' }} />
                     {processedBots.map((bot, idx) => (
                       !hiddenBots.includes(bot.uniqueAlias) && (
-                        <Line key={bot.id} type="monotone" dataKey={bot.uniqueAlias} stroke={COLORS[idx % COLORS.length]} strokeWidth={2} dot={false} activeDot={<CustomActiveDot />} name={bot.uniqueAlias}/>
+                        <Line key={bot.id} type="monotone" dataKey={bot.uniqueAlias} stroke={COLORS[idx % COLORS.length]} strokeWidth={hoveredBot === bot.uniqueAlias ? 3 : 2} dot={false} activeDot={<CustomActiveDot dataKey={bot.uniqueAlias} hoveredBot={hoveredBot} />} name={bot.uniqueAlias}/>
                       )
                     ))}
                   </>
