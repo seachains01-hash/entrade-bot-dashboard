@@ -79,16 +79,16 @@ const processBotData = (bot, tf) => {
   const winDeals = deals.filter(d => d.netProfit > 0).length;
   const winrate = deals.length > 0 ? ((winDeals / deals.length) * 100).toFixed(1) : 0;
   
-  // Tìm lệnh gần nhất (sắp xếp mới nhất)
-  const sortedDealsDesc = [...deals].sort((a,b) => new Date(b.closeTime) - new Date(a.closeTime));
-  const lastDeal = sortedDealsDesc[0];
-  let lastSignalTime = lastDeal ? (lastDeal.closeTime || lastDeal.openTime) : null;
+  // Tìm lệnh gần nhất trên toàn bộ lịch sử (không phụ thuộc timeframe)
+  const allSortedDealsDesc = [...allDeals].sort((a,b) => new Date(b.closeTime) - new Date(a.closeTime));
+  const absoluteLastDeal = allSortedDealsDesc[0];
+  let lastSignalTime = bot.updateTime || bot.updatedAt || bot.createTime || (absoluteLastDeal ? (absoluteLastDeal.closeTime || absoluteLastDeal.openTime) : null);
   
   let formattedLastTime = '-';
   if (lastSignalTime) {
     try {
       const d = new Date(lastSignalTime);
-      formattedLastTime = d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+      formattedLastTime = d.toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit' });
     } catch(e) {}
   }
 
@@ -223,7 +223,7 @@ const AppContent = () => {
 
     let currentTotalNav = 30000000 * processedBots.length;
     const currentPnL = {};
-    processedBots.forEach(bot => currentPnL[bot.uniqueAlias] = 0);
+    processedBots.forEach(bot => currentPnL[bot.uniqueAlias] = 30000000); // Khởi tạo mức đầu tư ban đầu là 30M
 
     const chartPoints = [];
     
@@ -235,9 +235,9 @@ const AppContent = () => {
     });
 
     allDeals.forEach(deal => {
-      let timeStr = deal.closeTimeRaw.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+      let timeStr = deal.closeTimeRaw.toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit' });
       if (timeframe !== 'DAY') {
-        timeStr = deal.closeTimeRaw.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' }) + ' ' + timeStr;
+        timeStr = deal.closeTimeRaw.toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', day: '2-digit', month: '2-digit' }) + ' ' + timeStr;
       }
       
       currentPnL[deal.uniqueAlias] += (deal.netProfit || 0);
