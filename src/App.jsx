@@ -48,9 +48,18 @@ const getAliasName = (name) => {
 };
 
 const getValidTime = (deal) => {
-  if (deal.closeTime && deal.closeTime !== 0 && deal.closeTime !== "0") return deal.closeTime;
-  if (deal.openTime && deal.openTime !== 0 && deal.openTime !== "0") return deal.openTime;
-  if (deal.dealTime && deal.dealTime !== 0 && deal.dealTime !== "0") return deal.dealTime;
+  const isInvalidDateString = (t) => {
+    if (!t) return true;
+    if (t === 0 || t === "0") return true;
+    if (typeof t === 'string') {
+      if (t.includes('0001-01-01') || t.includes('0000-11-30') || t.startsWith('0001-') || t.startsWith('0000-')) return true;
+    }
+    return false;
+  };
+
+  if (!isInvalidDateString(deal.closeTime)) return deal.closeTime;
+  if (!isInvalidDateString(deal.openTime)) return deal.openTime;
+  if (!isInvalidDateString(deal.dealTime)) return deal.dealTime;
   return null;
 };
 
