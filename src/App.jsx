@@ -158,23 +158,34 @@ const processBotData = (bot, tf) => {
   };
 // Global variable for dot coordinates to bypass React StrictMode freezing
 const globalDotCoords = {};
-let globalActiveKeys = [];
 
 const CustomActiveDot = (props) => {
-  const { cx, cy, dataKey, stroke, hoveredBot } = props;
+  const { cx, cy, dataKey, stroke } = props;
   
   globalDotCoords[dataKey] = cy;
   
-  if (hoveredBot === dataKey) {
-    return <circle cx={cx} cy={cy} r={6} fill={stroke} stroke="#fff" strokeWidth={2} style={{ filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.2))' }} />;
-  }
-  
-  return <circle cx={cx} cy={cy} r={0} />;
+  return <circle cx={cx} cy={cy} r={4} fill={stroke} stroke="#fff" strokeWidth={1} style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.1))' }} />;
 };
 
-const CustomTooltip = ({ active, payload, label, hoveredBot }) => {
-  if (active && payload && payload.length && hoveredBot) {
-    const item = payload.find(p => p.dataKey === hoveredBot);
+const CustomTooltip = ({ active, payload, label, mouseY }) => {
+  if (active && payload && payload.length && mouseY !== null) {
+    let closestBot = null;
+    let minDistance = 30; // Bán kính bắt dính 30px
+
+    payload.forEach(item => {
+      const cy = globalDotCoords[item.dataKey];
+      if (cy !== undefined) {
+        const dist = Math.abs(cy - mouseY);
+        if (dist < minDistance) {
+          minDistance = dist;
+          closestBot = item.dataKey;
+        }
+      }
+    });
+
+    if (!closestBot) return null;
+
+    const item = payload.find(p => p.dataKey === closestBot);
     if (!item) return null;
 
     const botAlias = item.dataKey;
@@ -224,31 +235,6 @@ const AppContent = () => {
   const [hiddenBots, setHiddenBots] = useState([]);
   
   const [mouseY, setMouseY] = useState(null);
-  const [mouseX, setMouseX] = useState(null);
-  const [hoveredBot, setHoveredBot] = useState(null);
-  
-  // Calculate closest bot after render, ensuring we have fresh dot coords
-  useEffect(() => {
-    if (mouseY !== null) {
-      let closest = null;
-      let minDistance = 30; // 30px snap radius
-      
-      globalActiveKeys.forEach(key => {
-        const cy = globalDotCoords[key];
-        if (cy !== undefined) {
-          const dist = Math.abs(cy - mouseY);
-          if (dist < minDistance) {
-            minDistance = dist;
-            closest = key;
-          }
-        }
-      });
-      
-      setHoveredBot(closest);
-    } else {
-      setHoveredBot(null);
-    }
-  }, [mouseY, mouseX]);
   
   const [timeframe, setTimeframe] = useState('ALL'); // 'DAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR', 'ALL'
   const [isMockMode, setIsMockMode] = useState(false);
@@ -846,16 +832,9 @@ const AppContent = () => {
               <LineChart 
                 data={chartData}
                 onMouseMove={(e) => {
-                  if (e && e.chartY && e.chartX) {
-                    setMouseY(e.chartY);
-                    setMouseX(e.chartX);
-                    globalActiveKeys = e.activePayload ? e.activePayload.map(p => p.dataKey) : [];
-                  }
+                  if (e && e.chartY) setMouseY(e.chartY);
                 }}
-                onMouseLeave={() => {
-                  setMouseY(null);
-                  setMouseX(null);
-                }}
+                onMouseLeave={() => setMouseY(null)}
               >
                 <CartesianGrid strokeDasharray="3 3" opacity={0.5} vertical={false}/>
                 <XAxis dataKey="time" minTickGap={60} tick={{ fontSize: 12, fill: 'var(--text-secondary)' }} tickMargin={10}/>
@@ -869,10 +848,10 @@ const AppContent = () => {
                 ) : (
                   <>
                     <YAxis domain={['auto', 'auto']} tickFormatter={(v) => (v/1000000).toFixed(1) + 'M'} tick={{ fontSize: 12, fill: 'var(--text-secondary)' }} width={60}/>
-                    <Tooltip shared={true} content={<CustomTooltip hoveredBot={hoveredBot} />} cursor={{ strokeDasharray: '3 3' }} />
+                    <Tooltip shared={true} content={<CustomTooltip mouseY={mouseY} />} cursor={{ strokeDasharray: '3 3' }} />
                     {processedBots.map((bot, idx) => (
                       !hiddenBots.includes(bot.uniqueAlias) && (
-                        <Line key={bot.id} type="monotone" dataKey={bot.uniqueAlias} stroke={COLORS[idx % COLORS.length]} strokeWidth={hoveredBot === bot.uniqueAlias ? 3 : 2} dot={false} activeDot={<CustomActiveDot hoveredBot={hoveredBot} />} name={bot.uniqueAlias}/>
+                        <Line key={bot.id} type="monotone" dataKey={bot.uniqueAlias} stroke={COLORS[idx % COLORS.length]} strokeWidth={2} dot={false} activeDot={<CustomActiveDot />} name={bot.uniqueAlias}/>
                       )
                     ))}
                   </>
