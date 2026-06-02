@@ -157,13 +157,13 @@ const processBotData = (bot, tf) => {
     timeframeReturn: returnPct
   };
 };
+// Global variable for dot coordinates to bypass React StrictMode freezing
+const globalDotCoords = {};
 
 const CustomActiveDot = (props) => {
-  const { cx, cy, dataKey, stroke, dotCoordsRef, hoveredBot } = props;
+  const { cx, cy, dataKey, stroke, hoveredBot } = props;
   
-  if (dotCoordsRef) {
-    dotCoordsRef.current[dataKey] = cy;
-  }
+  globalDotCoords[dataKey] = cy;
   
   if (hoveredBot === dataKey) {
     return <circle cx={cx} cy={cy} r={6} fill={stroke} stroke="#fff" strokeWidth={2} style={{ filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.2))' }} />;
@@ -225,7 +225,6 @@ const AppContent = () => {
   
   const [mouseY, setMouseY] = useState(null);
   const [hoveredBot, setHoveredBot] = useState(null);
-  const dotCoordsRef = useRef({});
   
   const [timeframe, setTimeframe] = useState('ALL'); // 'DAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR', 'ALL'
   const [isMockMode, setIsMockMode] = useState(false);
@@ -797,7 +796,7 @@ const AppContent = () => {
                     const currentActiveKeys = e.activePayload ? e.activePayload.map(p => p.dataKey) : [];
                     
                     currentActiveKeys.forEach(key => {
-                      const cy = dotCoordsRef.current[key];
+                      const cy = globalDotCoords[key];
                       if (cy !== undefined) {
                         const dist = Math.abs(cy - e.chartY);
                         if (dist < minDistance) {
@@ -830,7 +829,7 @@ const AppContent = () => {
                     <Tooltip shared={true} content={<CustomTooltip hoveredBot={hoveredBot} />} cursor={{ strokeDasharray: '3 3' }} />
                     {processedBots.map((bot, idx) => (
                       !hiddenBots.includes(bot.uniqueAlias) && (
-                        <Line key={bot.id} type="monotone" dataKey={bot.uniqueAlias} stroke={COLORS[idx % COLORS.length]} strokeWidth={hoveredBot === bot.uniqueAlias ? 3 : 2} dot={false} activeDot={<CustomActiveDot dotCoordsRef={dotCoordsRef} hoveredBot={hoveredBot} />} name={bot.uniqueAlias}/>
+                        <Line key={bot.id} type="monotone" dataKey={bot.uniqueAlias} stroke={COLORS[idx % COLORS.length]} strokeWidth={hoveredBot === bot.uniqueAlias ? 3 : 2} dot={false} activeDot={<CustomActiveDot hoveredBot={hoveredBot} />} name={bot.uniqueAlias}/>
                       )
                     ))}
                   </>
