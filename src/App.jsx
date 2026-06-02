@@ -158,6 +158,41 @@ const processBotData = (bot, tf) => {
   };
 };
 
+const CustomTooltip = ({ active, payload, label }) => {
+  if (active && payload && payload.length) {
+    const item = payload[0];
+    const botAlias = item.dataKey;
+    if (botAlias === 'totalNav') return null; // Fallback in case total is hovered
+    
+    const botNav = item.value;
+    const botPnL = botNav - 30000000;
+    
+    const data = item.payload;
+    const totalNav = data.totalNav;
+    const totalInvested = data.totalInvested || 30000000;
+    const totalPnL = totalNav - totalInvested;
+
+    return (
+      <div style={{ background: '#fff', border: '1px solid #e5e7eb', padding: '12px', borderRadius: '8px', fontSize: '13px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}>
+        <div style={{ fontWeight: 600, marginBottom: '8px', color: 'var(--text-secondary)' }}>{label}</div>
+        
+        <div style={{ color: item.color, fontWeight: 600, marginBottom: '12px', fontSize: '14px' }}>
+          <div style={{ marginBottom: '4px' }}>{botAlias}</div>
+          <div>NAV: {formatCurrency(botNav)}</div>
+          <div>PnL: <span style={{ color: botPnL >= 0 ? 'var(--success-color)' : 'var(--danger-color)' }}>{botPnL > 0 ? '+' : ''}{formatCurrency(botPnL)}</span></div>
+        </div>
+        
+        <div style={{ borderTop: '1px dashed #e5e7eb', paddingTop: '8px' }}>
+          <div style={{ marginBottom: '4px', color: 'var(--text-secondary)' }}>Tổng Hệ Thống:</div>
+          <div>Balance: <strong style={{color: 'var(--text-primary)'}}>{formatCurrency(totalNav)}</strong></div>
+          <div>Lãi/Lỗ: <strong style={{color: totalPnL >= 0 ? 'var(--success-color)' : 'var(--danger-color)'}}>{totalPnL > 0 ? '+' : ''}{formatCurrency(totalPnL)}</strong></div>
+        </div>
+      </div>
+    );
+  }
+  return null;
+};
+
 const AppContent = () => {
   const [token, setToken] = useState(localStorage.getItem('entrade_token') || '');
   const [isSetup, setIsSetup] = useState(!!localStorage.getItem('entrade_token'));
@@ -255,6 +290,7 @@ const AppContent = () => {
     chartPoints.push({
       time: 'Start',
       totalNav: currentTotalNav,
+      totalInvested: 30000000 * processedBots.length,
       ...currentPnL
     });
 
@@ -270,6 +306,7 @@ const AppContent = () => {
       chartPoints.push({
         time: timeStr,
         totalNav: currentTotalNav,
+        totalInvested: 30000000 * processedBots.length,
         ...currentPnL
       });
     });
@@ -741,7 +778,7 @@ const AppContent = () => {
                 ) : (
                   <>
                     <YAxis domain={['auto', 'auto']} tickFormatter={(v) => (v/1000000).toFixed(1) + 'M'} tick={{ fontSize: 12, fill: 'var(--text-secondary)' }} width={60}/>
-                    <Tooltip formatter={(value) => formatCurrency(value)} labelStyle={{ color: '#000', fontWeight: 'bold' }}/>
+                    <Tooltip shared={false} content={<CustomTooltip />} cursor={{ strokeDasharray: '3 3' }} />
                     {processedBots.map((bot, idx) => (
                       !hiddenBots.includes(bot.uniqueAlias) && (
                         <Line key={bot.id} type="monotone" dataKey={bot.uniqueAlias} stroke={COLORS[idx % COLORS.length]} strokeWidth={2} dot={false} name={bot.uniqueAlias}/>
