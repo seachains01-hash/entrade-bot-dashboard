@@ -156,26 +156,17 @@ const processBotData = (bot, tf) => {
     timeframeProfit: profit,
     timeframeReturn: returnPct
   };
-};
-// Global variable for dot coordinates to bypass React StrictMode freezing
-const globalDotCoords = {};
-let globalActiveKeys = [];
+const CustomTooltip = ({ active, payload, label, coordinate, mouseY }) => {
+  if (active && payload && payload.length) {
+    // Ẩn Tooltip nếu trỏ chuột quá xa đường Line (khoảng không)
+    if (mouseY !== null && coordinate && coordinate.y !== undefined) {
+      const distance = Math.abs(mouseY - coordinate.y);
+      if (distance > 30) {
+        return null;
+      }
+    }
 
-const CustomActiveDot = (props) => {
-  const { cx, cy, dataKey, stroke, hoveredBot } = props;
-  
-  globalDotCoords[dataKey] = cy;
-  
-  if (hoveredBot === dataKey) {
-    return <circle cx={cx} cy={cy} r={6} fill={stroke} stroke="#fff" strokeWidth={2} style={{ filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.2))' }} />;
-  }
-  
-  return <circle cx={cx} cy={cy} r={0} />;
-};
-
-const CustomTooltip = ({ active, payload, label, hoveredBot }) => {
-  if (active && payload && payload.length && hoveredBot) {
-    const item = payload.find(p => p.dataKey === hoveredBot);
+    const item = payload[0];
     if (!item) return null;
 
     const botAlias = item.dataKey;
@@ -223,33 +214,7 @@ const AppContent = () => {
   
   const [chartMode, setChartMode] = useState('total'); // 'total' or 'compare'
   const [hiddenBots, setHiddenBots] = useState([]);
-  
   const [mouseY, setMouseY] = useState(null);
-  const [mouseX, setMouseX] = useState(null);
-  const [hoveredBot, setHoveredBot] = useState(null);
-  
-  // Calculate closest bot after render, ensuring we have fresh dot coords
-  useEffect(() => {
-    if (mouseY !== null) {
-      let closest = null;
-      let minDistance = 30; // 30px snap radius
-      
-      globalActiveKeys.forEach(key => {
-        const cy = globalDotCoords[key];
-        if (cy !== undefined) {
-          const dist = Math.abs(cy - mouseY);
-          if (dist < minDistance) {
-            minDistance = dist;
-            closest = key;
-          }
-        }
-      });
-      
-      setHoveredBot(closest);
-    } else {
-      setHoveredBot(null);
-    }
-  }, [mouseY, mouseX]);
   
   const [timeframe, setTimeframe] = useState('ALL'); // 'DAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR', 'ALL'
   const [isMockMode, setIsMockMode] = useState(false);
@@ -812,16 +777,9 @@ const AppContent = () => {
               <LineChart 
                 data={chartData}
                 onMouseMove={(e) => {
-                  if (e && e.chartY && e.chartX) {
-                    setMouseY(e.chartY);
-                    setMouseX(e.chartX);
-                    globalActiveKeys = e.activePayload ? e.activePayload.map(p => p.dataKey) : [];
-                  }
+                  if (e && e.chartY) setMouseY(e.chartY);
                 }}
-                onMouseLeave={() => {
-                  setMouseY(null);
-                  setMouseX(null);
-                }}
+                onMouseLeave={() => setMouseY(null)}
               >
                 <CartesianGrid strokeDasharray="3 3" opacity={0.5} vertical={false}/>
                 <XAxis dataKey="time" tick={{ fontSize: 12, fill: 'var(--text-secondary)' }} tickMargin={10}/>
@@ -835,10 +793,10 @@ const AppContent = () => {
                 ) : (
                   <>
                     <YAxis domain={['auto', 'auto']} tickFormatter={(v) => (v/1000000).toFixed(1) + 'M'} tick={{ fontSize: 12, fill: 'var(--text-secondary)' }} width={60}/>
-                    <Tooltip shared={true} content={<CustomTooltip hoveredBot={hoveredBot} />} cursor={{ strokeDasharray: '3 3' }} />
+                    <Tooltip shared={false} content={<CustomTooltip mouseY={mouseY} />} cursor={{ strokeDasharray: '3 3' }} />
                     {processedBots.map((bot, idx) => (
                       !hiddenBots.includes(bot.uniqueAlias) && (
-                        <Line key={bot.id} type="monotone" dataKey={bot.uniqueAlias} stroke={COLORS[idx % COLORS.length]} strokeWidth={hoveredBot === bot.uniqueAlias ? 3 : 2} dot={false} activeDot={<CustomActiveDot hoveredBot={hoveredBot} />} name={bot.uniqueAlias}/>
+                        <Line key={bot.id} type="monotone" dataKey={bot.uniqueAlias} stroke={COLORS[idx % COLORS.length]} strokeWidth={2} dot={false} activeDot={{ r: 6, strokeWidth: 0 }} name={bot.uniqueAlias}/>
                       )
                     ))}
                   </>
