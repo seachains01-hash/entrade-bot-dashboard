@@ -158,51 +158,42 @@ const processBotData = (bot, tf) => {
   };
 };
 
-const CustomTooltip = ({ active, payload, label }) => {
+const CustomTooltip = ({ active, payload, label, coordinate, mouseY }) => {
   if (active && payload && payload.length) {
-    const data = payload[0].payload;
+    // Chỉ hiển thị Tooltip nếu trỏ chuột GẦN đường Line (khoảng cách Y < 20px)
+    if (mouseY !== null && coordinate && coordinate.y !== undefined) {
+      const distance = Math.abs(mouseY - coordinate.y);
+      if (distance > 20) {
+        return null; // Đang trỏ vào khoảng không -> Ẩn
+      }
+    }
+
+    const item = payload[0];
+    const botAlias = item.dataKey;
+    if (botAlias === 'totalNav' || botAlias === 'totalInvested' || botAlias === 'activeBotAlias') return null;
+    
+    const botNav = item.value;
+    const botPnL = botNav - 30000000;
+    
+    const data = item.payload;
     const totalNav = data.totalNav;
-    const totalInvested = data.totalInvested || (30000000 * payload.length);
+    const totalInvested = data.totalInvested || 30000000;
     const totalPnL = totalNav - totalInvested;
 
-    // Filter bots and sort by NAV descending so the tooltip matches the lines visually
-    const bots = payload.filter(p => p.dataKey !== 'totalNav' && p.dataKey !== 'totalInvested' && p.dataKey !== 'activeBotAlias');
-    bots.sort((a, b) => b.value - a.value);
-
     return (
-      <div style={{ background: 'rgba(255, 255, 255, 0.95)', border: '1px solid #e5e7eb', padding: '12px', borderRadius: '8px', fontSize: '12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', minWidth: '240px' }}>
-        <div style={{ fontWeight: 600, marginBottom: '10px', color: 'var(--text-secondary)', borderBottom: '1px solid #f3f4f6', paddingBottom: '6px' }}>
-          {label}
+      <div style={{ background: '#fff', border: '1px solid #e5e7eb', padding: '12px', borderRadius: '8px', fontSize: '13px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}>
+        <div style={{ fontWeight: 600, marginBottom: '8px', color: 'var(--text-secondary)' }}>{label}</div>
+        
+        <div style={{ color: item.color, fontWeight: 600, marginBottom: '12px', fontSize: '14px' }}>
+          <div style={{ marginBottom: '4px' }}>{botAlias}</div>
+          <div>NAV: {formatCurrency(botNav)}</div>
+          <div>PnL: <span style={{ color: botPnL >= 0 ? 'var(--success-color)' : 'var(--danger-color)' }}>{botPnL > 0 ? '+' : ''}{formatCurrency(botPnL)}</span></div>
         </div>
         
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '12px' }}>
-          {bots.map((item, idx) => {
-            const botPnL = item.value - 30000000;
-            return (
-              <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: item.color }}></div>
-                  <span style={{ fontWeight: 500, color: '#374151' }}>{item.dataKey}</span>
-                </div>
-                <div style={{ fontWeight: 600, color: botPnL >= 0 ? 'var(--success-color)' : 'var(--danger-color)' }}>
-                  {botPnL > 0 ? '+' : ''}{formatCurrency(botPnL)}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-        
-        <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '10px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', color: 'var(--text-secondary)' }}>
-            <span>Tổng Balance:</span>
-            <strong style={{color: 'var(--text-primary)'}}>{formatCurrency(totalNav)}</strong>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ color: 'var(--text-secondary)' }}>Tổng Lãi/Lỗ:</span>
-            <strong style={{ fontSize: '14px', color: totalPnL >= 0 ? 'var(--success-color)' : 'var(--danger-color)' }}>
-              {totalPnL > 0 ? '+' : ''}{formatCurrency(totalPnL)}
-            </strong>
-          </div>
+        <div style={{ borderTop: '1px dashed #e5e7eb', paddingTop: '8px' }}>
+          <div style={{ marginBottom: '4px', color: 'var(--text-secondary)' }}>Tổng Hệ Thống:</div>
+          <div>Balance: <strong style={{color: 'var(--text-primary)'}}>{formatCurrency(totalNav)}</strong></div>
+          <div>Lãi/Lỗ: <strong style={{color: totalPnL >= 0 ? 'var(--success-color)' : 'var(--danger-color)'}}>{totalPnL > 0 ? '+' : ''}{formatCurrency(totalPnL)}</strong></div>
         </div>
       </div>
     );
@@ -224,6 +215,7 @@ const AppContent = () => {
   
   const [chartMode, setChartMode] = useState('total'); // 'total' or 'compare'
   const [hiddenBots, setHiddenBots] = useState([]);
+  const [mouseY, setMouseY] = useState(null);
   
   const [timeframe, setTimeframe] = useState('ALL'); // 'DAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR', 'ALL'
   const [isMockMode, setIsMockMode] = useState(false);
@@ -783,7 +775,13 @@ const AppContent = () => {
 
           <div className="chart-container">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData}>
+              <LineChart 
+                data={chartData}
+                onMouseMove={(e) => {
+                  if (e && e.chartY) setMouseY(e.chartY);
+                }}
+                onMouseLeave={() => setMouseY(null)}
+              >
                 <CartesianGrid strokeDasharray="3 3" opacity={0.5} vertical={false}/>
                 <XAxis dataKey="time" tick={{ fontSize: 12, fill: 'var(--text-secondary)' }} tickMargin={10}/>
                 
@@ -796,7 +794,7 @@ const AppContent = () => {
                 ) : (
                   <>
                     <YAxis domain={['auto', 'auto']} tickFormatter={(v) => (v/1000000).toFixed(1) + 'M'} tick={{ fontSize: 12, fill: 'var(--text-secondary)' }} width={60}/>
-                    <Tooltip shared={true} content={<CustomTooltip />} cursor={{ strokeDasharray: '3 3' }} />
+                    <Tooltip shared={false} content={<CustomTooltip mouseY={mouseY} />} cursor={{ strokeDasharray: '3 3' }} />
                     {processedBots.map((bot, idx) => (
                       !hiddenBots.includes(bot.uniqueAlias) && (
                         <Line key={bot.id} type="monotone" dataKey={bot.uniqueAlias} stroke={COLORS[idx % COLORS.length]} strokeWidth={2} dot={false} activeDot={{ r: 6, strokeWidth: 0 }} name={bot.uniqueAlias}/>
