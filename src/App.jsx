@@ -47,9 +47,19 @@ const getAliasName = (name) => {
   return name;
 };
 
+const getValidTime = (deal) => {
+  if (deal.closeTime && deal.closeTime !== 0 && deal.closeTime !== "0") return deal.closeTime;
+  if (deal.openTime && deal.openTime !== 0 && deal.openTime !== "0") return deal.openTime;
+  if (deal.dealTime && deal.dealTime !== 0 && deal.dealTime !== "0") return deal.dealTime;
+  return null;
+};
+
 // Filter deals by timeframe
 const filterDealsByTimeframe = (deals, tf) => {
-  if (tf === 'ALL' || !deals) return deals || [];
+  if (!deals) return [];
+  const validDeals = deals.filter(d => getValidTime(d) !== null);
+  
+  if (tf === 'ALL') return validDeals;
   const now = new Date();
   let startTime = 0;
   
@@ -67,7 +77,7 @@ const filterDealsByTimeframe = (deals, tf) => {
     startTime = new Date(now.getFullYear(), 0, 1).getTime();
   }
   
-  return deals.filter(d => new Date(d.closeTime).getTime() >= startTime);
+  return validDeals.filter(d => new Date(getValidTime(d)).getTime() >= startTime);
 };
 
 // Hàm xử lý dữ liệu bot chi tiết
@@ -81,12 +91,12 @@ const processBotData = (bot, tf) => {
   
   // Tìm lệnh gần nhất trên toàn bộ lịch sử (ưu tiên lệnh mới nhất dựa vào openTime hoặc closeTime)
   const allSortedDealsDesc = [...allDeals].sort((a,b) => {
-    const timeA = new Date(a.closeTime || a.openTime || 0).getTime();
-    const timeB = new Date(b.closeTime || b.openTime || 0).getTime();
+    const timeA = new Date(getValidTime(a) || 0).getTime();
+    const timeB = new Date(getValidTime(b) || 0).getTime();
     return timeB - timeA;
   });
   const absoluteLastDeal = allSortedDealsDesc[0];
-  let lastSignalTime = absoluteLastDeal ? (absoluteLastDeal.closeTime || absoluteLastDeal.openTime) : null;
+  let lastSignalTime = absoluteLastDeal ? getValidTime(absoluteLastDeal) : null;
   
   let formattedLastTime = '-';
   if (lastSignalTime) {
@@ -211,12 +221,13 @@ const AppContent = () => {
       const filteredHistory = filterDealsByTimeframe(history, timeframe);
       
       filteredHistory.forEach(deal => {
-        if (deal.closeTime) {
+        const validT = getValidTime(deal);
+        if (validT) {
           try {
             allDeals.push({
               ...deal,
               uniqueAlias: bot.uniqueAlias,
-              closeTimeRaw: new Date(deal.closeTime)
+              closeTimeRaw: new Date(validT)
             });
           } catch(e) {}
         }
